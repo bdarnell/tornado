@@ -1,12 +1,16 @@
 import asyncio
 import concurrent.futures
 import contextlib
+import functools
+import importlib.resources
+import itertools
 import logging
 import os
+import ssl
 import threading
 import typing
 import unittest
-import urllib
+import urllib.parse
 
 from browserstack.local import Local
 from selenium import webdriver
@@ -17,14 +21,21 @@ import selenium.webdriver.support.expected_conditions as EC
 import tornado.httpclient
 import tornado.httpserver
 import tornado.httputil
+import tornado.ioloop
+import tornado.iostream
 import tornado.log
+import tornado.tcpclient
 import tornado.template
 import tornado.testing
 import tornado.web
 
 TIMEOUT = 5
 
+counter = itertools.count()
+
 # Copied from cpython 3.11 source. Remove this after upgrading.
+
+
 def _enter_context(cm, addcleanup):
     # We look up the special methods on the type to match the with
     # statement.
@@ -83,18 +94,44 @@ def run_on_loop(loop, fn, *args, **kwargs):
     loop.call_soon_threadsafe(wrapped)
     return fut.result()
 
+
 class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
     def __init__(self, server_conn, request_conn):
         self.server_conn = server_conn
         self.request_conn = request_conn
-        
+
     def headers_received(self, start_line, headers):
-        print('proxy received', start_line)
+        logging.warning("proxy received %r", start_line)
+        self.method = start_line.method
+        self.target = start_line.path
+        if start_line.method == "CONNECT":
+            conn = self.request_conn.detach()
+            tornado.ioloop.IOLoop.current().spawn_callback(self.send_connect, conn)
+            return
         self.headers = headers
         self.chunks = []
 
-        self.method = start_line.method
-        self.target = start_line.path
+
+    async def send_connect(self, upstream_conn):
+        tcp = tornado.tcpclient.TCPClient()
+        netloc = proxy_map.get("https", self.target)
+        host, port = netloc.split(":")
+        downstream_conn = await(tcp.connect(host, port))
+        await upstream_conn.write(b"HTTP/1.1 200 OK\r\n\r\n")
+        await asyncio.gather(
+            self.copy_stream(upstream_conn, downstream_conn),
+            self.copy_stream(downstream_conn, upstream_conn))
+    
+    async def copy_stream(self, a, b):
+        #id = next(counter)
+        #logging.warning("running copy loop %d %r %r", id, a, b)
+        try:
+            while True:
+                chunk = await a.read_bytes(4096, partial=True)
+                #logging.warning("%d got %r", id, len(chunk))
+                await b.write(chunk)
+        except tornado.iostream.StreamClosedError:
+            pass
 
     def data_received(self, chunk):
         self.chunks.append(self)
@@ -103,26 +140,29 @@ class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
         tornado.ioloop.IOLoop.current().spawn_callback(self.send_proxied_request)
 
     async def send_proxied_request(self):
-        if self.method == "CONNECT":
-            # detach and start forwarding to tcpclient
-            pass
-        else:
-            # self.target is an absolute url. 
-            parsed = urllib.parse.urlparse(self.target)
-            parsed.netloc = proxy_map.get(parsed.scheme, parsed.netloc)
+        # self.target is an absolute url.
+        parsed = urllib.parse.urlparse(self.target)
+        rewritten = parsed._replace(
+            netloc=proxy_map.get(parsed.scheme, parsed.netloc)
+        )
 
-            http = tornado.httpclient.AsyncHTTPClient()
-            resp = await http.fetch(parsed.geturl())
-            await self.request_conn.write_headers(
-                tornado.httputil.ResponseStartLine(
-                    resp.code,
-                    resp.reason,
-                    "HTTP/1.1"
-                ),
-                resp.headers,
-            )
-            await self.request_conn.write(resp.body)
-            self.request_conn.finish()
+        http = tornado.httpclient.AsyncHTTPClient()
+        resp = await http.fetch(
+            rewritten.geturl(),
+            method=self.method,
+            body=b"".join(self.chunks) if self.method == "POST" else None,
+            raise_error=False,
+        )
+        await self.request_conn.write_headers(
+            tornado.httputil.ResponseStartLine(
+                "HTTP/1.1",
+                resp.code,
+                resp.reason,
+            ),
+            resp.headers,
+        )
+        await self.request_conn.write(resp.body)
+        self.request_conn.finish()
 
     def on_connection_close(self):
         pass
@@ -131,9 +171,10 @@ class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
 class Proxy(tornado.httputil.HTTPServerConnectionDelegate):
     def start_request(self, server_conn, request_conn):
         return ProxyDelegate(server_conn, request_conn)
-    
+
     def on_close(self, server_conn):
         pass
+
 
 class ProxyMap(object):
     def __init__(self):
@@ -148,7 +189,9 @@ class ProxyMap(object):
         with self.lock:
             self.map[(protocol, host)] = netloc
 
+
 proxy_map = ProxyMap()
+
 
 def setUpModule():
     global proxy_asyncio_loop
@@ -159,9 +202,9 @@ def setUpModule():
         sock, port = tornado.testing.bind_unused_port()
         server.add_sockets([sock])
         return server, port
+
     global proxy_server
     proxy_server, proxy_port = run_on_loop(proxy_asyncio_loop, start_server)
-
 
     username = os.environ["BROWSERSTACK_USERNAME"]
     access_key = os.environ["BROWSERSTACK_ACCESS_KEY"]
@@ -170,9 +213,10 @@ def setUpModule():
         Local(
             key=access_key,
             force="true",  # kill existing process
-            #forcelocal="true",  # Run everything through local. Doesn't seem to work with safari.
+            # forcelocal="true",  # Run everything through local. Doesn't seem to work with safari.
             forceProxy="true",
-            localProxyHost="127.0.0.1", localProxyPort=f"{proxy_port}"
+            localProxyHost="127.0.0.1",
+            localProxyPort=f"{proxy_port}",
         )
     )
 
@@ -198,7 +242,7 @@ def make_app(base_handler, app_factory):
                 <body>
                 success from {{request.protocol}}://{{request.host}}
                 </body>
-            """
+            """,
         }
     )
 
@@ -225,6 +269,15 @@ def make_app(base_handler, app_factory):
     )
     return app
 
+
+def each_protocol(test_func):
+    @functools.wraps(test_func)
+    def wrapper(self):
+        for tls in [False, True]:
+            self.protocol = "https" if tls else "http"
+            with self.subTest(tls=tls):
+                test_func(self)
+    return wrapper
 
 class BaseBrowserTestCase(unittest.TestCase):
     def enterContext(self, cm):
@@ -262,29 +315,46 @@ class BaseBrowserTestCase(unittest.TestCase):
         )
 
     def setUp(self):
+        self.domain = f"tornadotest{next(counter)}.com"
         loop = self.enterContext(run_asyncio_thread())
 
         def start_server():
             app = make_app(tornado.web.RequestHandler, tornado.web.Application)
-            server = tornado.httpserver.HTTPServer(app)
-            sock, port = tornado.testing.bind_unused_port()
-            server.add_sockets([sock])
-            return server, port
+            http_server = tornado.httpserver.HTTPServer(app)
+            http_sock, http_port = tornado.testing.bind_unused_port()
+            http_server.add_sockets([http_sock])
 
-        self.server, self.port = run_on_loop(loop, start_server)
+            tt_path = importlib.resources.files("tornado.test")
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            with (importlib.resources.as_file(tt_path.joinpath("test.crt")) as cert,
+                  importlib.resources.as_file(tt_path.joinpath("test.key")) as key):
+                ssl_ctx.load_cert_chain(cert, key)
+
+            https_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
+            https_sock, https_port = tornado.testing.bind_unused_port()
+            https_server.add_sockets([https_sock])
+            return http_server, http_port, https_server, https_port
+
+        self.http_server, self.http_port, self.https_server, self.https_port = run_on_loop(loop, start_server)
+        proxy_map.set("http", self.domain, f"127.0.0.1:{self.http_port}")
+        proxy_map.set("https", f"{self.domain}:443", f"127.0.0.1:{self.https_port}")
 
     def tearDown(self):
-        self.server.stop()
+        self.http_server.stop()
+        self.https_server.stop()
         super().tearDown()
 
     def get_url(self, path):
-        return f"http://example532532.com:{self.port}{path}"
+        return f"{self.protocol}://{self.domain}{path}"
 
+    @each_protocol
     def test_simple(self):
+        wait = WebDriverWait(self.driver, TIMEOUT)
         self.driver.get(self.get_url("/login"))
+        wait.until(EC.presence_of_element_located((By.ID, "submit")))
         button = self.driver.find_element(By.ID, "submit")
         button.submit()
-        WebDriverWait(self.driver, TIMEOUT).until(EC.title_is("success"))
+        wait.until(EC.title_is("success"))
         print(self.driver.page_source)
 
 
@@ -311,7 +381,7 @@ class SafariTestCase(BaseBrowserTestCase):
 
         options = Options()
         # Safari defaults to some ancient version if you don't
-        # specify. 
+        # specify.
         options.browser_version = "16"
         return options
 
