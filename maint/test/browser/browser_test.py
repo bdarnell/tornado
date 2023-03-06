@@ -12,6 +12,8 @@ import typing
 import unittest
 import urllib.parse
 
+import pytest
+
 from browserstack.local import Local
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -33,33 +35,9 @@ TIMEOUT = 5
 
 counter = itertools.count()
 
-# Copied from cpython 3.11 source. Remove this after upgrading.
 
-
-def _enter_context(cm, addcleanup):
-    # We look up the special methods on the type to match the with
-    # statement.
-    cls = type(cm)
-    try:
-        enter = cls.__enter__
-        exit = cls.__exit__
-    except AttributeError:
-        raise TypeError(
-            f"'{cls.__module__}.{cls.__qualname__}' object does "
-            f"not support the context manager protocol"
-        ) from None
-    result = enter(cm)
-    addcleanup(exit, cm, None, None, None)
-    return result
-
-
-def enterModuleContext(cm):
-    """Same as enterContext, but module-wide."""
-    return _enter_context(cm, unittest.addModuleCleanup)
-
-
-@contextlib.contextmanager
-def run_asyncio_thread():
+@pytest.fixture
+def background_asyncio():
     loop_future = concurrent.futures.Future()
 
     async def loop_main():
@@ -111,24 +89,24 @@ class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
         self.headers = headers
         self.chunks = []
 
-
     async def send_connect(self, upstream_conn):
         tcp = tornado.tcpclient.TCPClient()
         netloc = proxy_map.get("https", self.target)
         host, port = netloc.split(":")
-        downstream_conn = await(tcp.connect(host, port))
+        downstream_conn = await tcp.connect(host, port)
         await upstream_conn.write(b"HTTP/1.1 200 OK\r\n\r\n")
         await asyncio.gather(
             self.copy_stream(upstream_conn, downstream_conn),
-            self.copy_stream(downstream_conn, upstream_conn))
-    
+            self.copy_stream(downstream_conn, upstream_conn),
+        )
+
     async def copy_stream(self, a, b):
-        #id = next(counter)
-        #logging.warning("running copy loop %d %r %r", id, a, b)
+        # id = next(counter)
+        # logging.warning("running copy loop %d %r %r", id, a, b)
         try:
             while True:
                 chunk = await a.read_bytes(4096, partial=True)
-                #logging.warning("%d got %r", id, len(chunk))
+                # logging.warning("%d got %r", id, len(chunk))
                 await b.write(chunk)
         except tornado.iostream.StreamClosedError:
             pass
@@ -142,11 +120,10 @@ class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
     async def send_proxied_request(self):
         # self.target is an absolute url.
         parsed = urllib.parse.urlparse(self.target)
-        rewritten = parsed._replace(
-            netloc=proxy_map.get(parsed.scheme, parsed.netloc)
-        )
+        rewritten = parsed._replace(netloc=proxy_map.get(parsed.scheme, parsed.netloc))
 
         http = tornado.httpclient.AsyncHTTPClient()
+        logging.warning("proxy calling %r", rewritten.geturl())
         resp = await http.fetch(
             rewritten.geturl(),
             method=self.method,
@@ -193,39 +170,33 @@ class ProxyMap(object):
 proxy_map = ProxyMap()
 
 
-def setUpModule():
-    global proxy_asyncio_loop
-    proxy_asyncio_loop = enterModuleContext(run_asyncio_thread())
-
+@pytest.fixture
+def proxy_port(background_asyncio):
     def start_server():
         server = tornado.httpserver.HTTPServer(Proxy())
         sock, port = tornado.testing.bind_unused_port()
         server.add_sockets([sock])
         return server, port
 
-    global proxy_server
-    proxy_server, proxy_port = run_on_loop(proxy_asyncio_loop, start_server)
+    proxy_server, proxy_port = run_on_loop(background_asyncio, start_server)
+    yield proxy_port
+    run_on_loop(background_asyncio, proxy_server.stop)
 
+
+@pytest.fixture
+def browserstack_url(proxy_port):
     username = os.environ["BROWSERSTACK_USERNAME"]
     access_key = os.environ["BROWSERSTACK_ACCESS_KEY"]
 
-    enterModuleContext(
-        Local(
-            key=access_key,
-            force="true",  # kill existing process
-            # forcelocal="true",  # Run everything through local. Doesn't seem to work with safari.
-            forceProxy="true",
-            localProxyHost="127.0.0.1",
-            localProxyPort=f"{proxy_port}",
-        )
-    )
-
-    global BS_URL
-    BS_URL = f"https://{username}:{access_key}@hub.browserstack.com/wd/hub"
-
-
-def tearDownModule():
-    run_on_loop(proxy_asyncio_loop, proxy_server.stop)
+    with Local(
+        key=access_key,
+        force="true",  # kill existing process
+        # forcelocal="true",  # Run everything through local. Doesn't seem to work with safari.
+        forceProxy="true",
+        localProxyHost="127.0.0.1",
+        localProxyPort=f"{proxy_port}",
+    ):
+        yield f"https://{username}:{access_key}@hub.browserstack.com/wd/hub"
 
 
 def make_app(base_handler, app_factory):
@@ -248,6 +219,7 @@ def make_app(base_handler, app_factory):
 
     class LoginHandler(base_handler):
         def get(self):
+            logging.warning("in handler")
             self.set_cookie("sesssion_id", "1234")
             self.redirect("/form")
 
@@ -270,128 +242,90 @@ def make_app(base_handler, app_factory):
     return app
 
 
-def each_protocol(test_func):
-    @functools.wraps(test_func)
-    def wrapper(self):
-        for tls in [False, True]:
-            self.protocol = "https" if tls else "http"
-            with self.subTest(tls=tls):
-                test_func(self)
-    return wrapper
+@pytest.fixture
+def driver(browser_options, browserstack_url):
+    browser_options.set_capability(
+        "bstack:options",
+        {
+            "local": "true",
+            "networkLogs": "true",
+            "networkLogsOptions": {"captureContent": "true"},
+        },
+    )
+    with webdriver.Remote(
+        command_executor=browserstack_url,
+        options=browser_options,
+    ) as driver:
+        yield driver
 
-class BaseBrowserTestCase(unittest.TestCase):
-    def enterContext(self, cm):
-        """Enters the supplied context manager.
-        If successful, also adds its __exit__ method as a cleanup
-        function and returns the result of the __enter__ method.
-        """
-        return _enter_context(cm, self.addCleanup)
 
-    @classmethod
-    def enterClassContext(cls, cm):
-        """Same as enterContext, but class-wide."""
-        return _enter_context(cm, cls.addClassCleanup)
+@pytest.fixture(params=[pytest.param(False, id="http"), pytest.param(True, id="https")])
+def http_server(request, background_asyncio):
+    protocol = "https" if request.param else "http"
+    domain = f"tornadotest{next(counter)}.com"
 
-    @classmethod
-    def browser_options(cls):
-        raise NotImplementedError()
-
-    @classmethod
-    def setUpClass(cls):
-        options = cls.browser_options()
-        options.set_capability(
-            "bstack:options",
-            {
-                "local": "true",
-                "networkLogs": "true",
-                "networkLogsOptions": {"captureContent": "true"},
-            },
-        )
-        cls.driver = cls.enterClassContext(
-            webdriver.Remote(
-                command_executor=BS_URL,
-                options=options,
-            )
-        )
-
-    def setUp(self):
-        self.domain = f"tornadotest{next(counter)}.com"
-        loop = self.enterContext(run_asyncio_thread())
-
-        def start_server():
-            app = make_app(tornado.web.RequestHandler, tornado.web.Application)
-            http_server = tornado.httpserver.HTTPServer(app)
-            http_sock, http_port = tornado.testing.bind_unused_port()
-            http_server.add_sockets([http_sock])
-
+    def create_server():
+        nonlocal protocol, domain
+        app = make_app(tornado.web.RequestHandler, tornado.web.Application)
+        sock, port = tornado.testing.bind_unused_port()
+        logging.warning("starting %s server on port %d", protocol, port)
+        if protocol == "https":
             tt_path = importlib.resources.files("tornado.test")
             ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            with (importlib.resources.as_file(tt_path.joinpath("test.crt")) as cert,
-                  importlib.resources.as_file(tt_path.joinpath("test.key")) as key):
+            with (
+                importlib.resources.as_file(tt_path.joinpath("test.crt")) as cert,
+                importlib.resources.as_file(tt_path.joinpath("test.key")) as key,
+            ):
                 ssl_ctx.load_cert_chain(cert, key)
+            server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
+            proxy_map.set(protocol, f"{domain}:443", f"127.0.0.1:{port}")
+        else:
+            server = tornado.httpserver.HTTPServer(app)
+            proxy_map.set(protocol, domain, f"127.0.0.1:{port}")
 
-            https_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
-            https_sock, https_port = tornado.testing.bind_unused_port()
-            https_server.add_sockets([https_sock])
-            return http_server, http_port, https_server, https_port
+        server.add_sockets([sock])
+        return server
 
-        self.http_server, self.http_port, self.https_server, self.https_port = run_on_loop(loop, start_server)
-        proxy_map.set("http", self.domain, f"127.0.0.1:{self.http_port}")
-        proxy_map.set("https", f"{self.domain}:443", f"127.0.0.1:{self.https_port}")
-
-    def tearDown(self):
-        self.http_server.stop()
-        self.https_server.stop()
-        super().tearDown()
-
-    def get_url(self, path):
-        return f"{self.protocol}://{self.domain}{path}"
-
-    @each_protocol
-    def test_simple(self):
-        wait = WebDriverWait(self.driver, TIMEOUT)
-        self.driver.get(self.get_url("/login"))
-        wait.until(EC.presence_of_element_located((By.ID, "submit")))
-        button = self.driver.find_element(By.ID, "submit")
-        button.submit()
-        wait.until(EC.title_is("success"))
-        print(self.driver.page_source)
+    server = run_on_loop(background_asyncio, create_server)
+    yield f"{protocol}://{domain}"
+    logging.warning("stopping server")
+    server.stop()
 
 
-class FirefoxTestCase(BaseBrowserTestCase):
-    @classmethod
-    def browser_options(cls):
-        from selenium.webdriver.firefox.options import Options
-
-        return Options()
-
-
-class ChromeTestCase(BaseBrowserTestCase):
-    @classmethod
-    def browser_options(cls):
-        from selenium.webdriver.chrome.options import Options
-
-        return Options()
+def test_simple(driver, http_server):
+    wait = WebDriverWait(driver, TIMEOUT)
+    driver.get(f"{http_server}/login")
+    wait.until(EC.presence_of_element_located((By.ID, "submit")))
+    button = driver.find_element(By.ID, "submit")
+    button.submit()
+    wait.until(EC.title_is("success"))
+    print(driver.page_source)
 
 
-class SafariTestCase(BaseBrowserTestCase):
-    @classmethod
-    def browser_options(cls):
-        from selenium.webdriver.safari.options import Options
+@pytest.fixture(
+    params=[
+        "firefox",
+        # "chrome",
+        # "safari",
+    ]
+)
+def browser_options(request):
+    match request.param:
+        case "firefox":
+            from selenium.webdriver.firefox.options import Options
 
-        options = Options()
-        # Safari defaults to some ancient version if you don't
-        # specify.
-        options.browser_version = "16"
-        return options
+            return Options()
+        case "chrome":
+            from selenium.webdriver.chrome.options import Options
 
+            return Options()
+        case "safari":
+            from selenium.webdriver.safari.options import Options
 
-del BaseBrowserTestCase
-
-# del FirefoxTestCase
-del ChromeTestCase
-del SafariTestCase
-
-if __name__ == "__main__":
-    tornado.log.enable_pretty_logging()
-    unittest.main(verbosity=2)
+            options = Options()
+            # Safari defaults to some ancient version if you don't
+            # specify.
+            options.browser_version = "16"
+            return options
+        case _:
+            raise Exception(f"unknown browser {request.param}")
