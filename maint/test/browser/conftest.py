@@ -76,7 +76,8 @@ def browserstack_url(proxy_port):
         "firefox",
         "chrome",
         "safari",
-    ]
+    ],
+    scope="session",
 )
 def browser_options(request):
     match request.param:
@@ -99,7 +100,7 @@ def browser_options(request):
         case _:
             raise Exception(f"unknown browser {request.param}")
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def driver(browser_options, browserstack_url):
     browser_options.set_capability(
         "bstack:options",
@@ -152,7 +153,7 @@ class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
             pass
 
     def data_received(self, chunk):
-        self.chunks.append(self)
+        self.chunks.append(chunk)
 
     def finish(self):
         asyncio.create_task(self.send_proxied_request())
@@ -169,6 +170,8 @@ class ProxyDelegate(tornado.httputil.HTTPMessageDelegate):
             method=self.method,
             body=b"".join(self.chunks) if self.method == "POST" else None,
             raise_error=False,
+            follow_redirects=False,
+            headers=self.headers,
         )
         await self.request_conn.write_headers(
             tornado.httputil.ResponseStartLine(
