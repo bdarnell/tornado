@@ -100,7 +100,13 @@ def browser_options(request):
         case _:
             raise Exception(f"unknown browser {request.param}")
 
-@pytest.fixture(scope="session")
+# It would be nice to make this session scoped, and I went to some length to
+# avoid domain reuse so that would work, but in the end we want to test
+# "localhost" so we need to be able to get a clean slate. The specific obstacle
+# (even if we could cheaply clear cookies) is that in HTTPS mode the browser holds
+# a connection open (via proxy CONNECT) to the older application longer than we want.
+# We'd need to terminate TLS in the proxy to make this work. 
+@pytest.fixture  # (scope="session")
 def driver(browser_options, browserstack_url):
     browser_options.set_capability(
         "bstack:options",
@@ -210,7 +216,13 @@ class ProxyMap(object):
 
     def set(self, protocol, host, netloc):
         with self.lock:
+            assert (protocol, host) not in self.map
             self.map[(protocol, host)] = netloc
+
+    def clear(self, protocol, host):
+        with self.lock:
+            assert (protocol, host) in self.map
+            del self.map[(protocol, host)]
 
 
 @pytest.fixture(scope="session")

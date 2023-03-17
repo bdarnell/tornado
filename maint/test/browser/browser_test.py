@@ -64,7 +64,7 @@ def good_app(request, protocol):
     loader = tornado.template.DictLoader(
         {
             "form.html": """
-                <form method="POST" action="/submit">
+                <form id="good_form" method="POST" action="/submit">
                 {% module xsrf_form_html() %}
                 <input type="submit" id="submit"/>
                 </form>
@@ -85,15 +85,24 @@ def good_app(request, protocol):
 
     class FormHandler(base_handler):
         def get(self):
+            logging.warning("in good form handler")
             self.render("form.html")
 
     class SubmitHandler(base_handler):
         def post(self):
+            logging.warning(f"SubmitHandler.post {self.request.method} {self.application.settings.get('xsrf_cookies')} {id(self.application)}")
             if self.get_cookie(self.session_cookie_name()) != "1234":
                 self.set_status(401)
                 self.render("failure.html", message="no session cookie")
                 return
             self.render("success.html")
+
+        def write_error(self, status_code, **kwargs):
+            self.render("failure.html", message=self._reason)
+
+        def check_xsrf_cookie(self):
+            logging.warning("checking xsrf cookie")
+            super().check_xsrf_cookie()
 
     app = app_factory(
         [
@@ -102,7 +111,37 @@ def good_app(request, protocol):
             ("/submit", SubmitHandler),
         ],
         template_loader=loader,
+        template_path=f"frustration{next(counter)}"
     )
+    logging.warning("created good app %r", id(app))
+    return app
+
+@pytest.fixture
+def evil_app(good_base_url):
+    loader = tornado.template.DictLoader(
+        {
+            "form.html": """
+                <form id="evil_form" method="POST" action="{{good_base_url}}/submit">
+                <input type="submit" id="submit"/>
+                </form>
+            """,
+        }
+    )
+
+    class FormHandler(tornado.web.RequestHandler):
+        def get(self):
+            logging.warning("in evil form handler")
+            self.render("form.html", good_base_url=good_base_url)
+
+
+    app = tornado.web.Application(
+        [
+            ("/form", FormHandler),
+        ],
+        template_loader=loader,
+        template_path=f"frustration{next(counter)}"
+    )
+    logging.warning("created evil app %r", id(app))
     return app
 
 
@@ -138,13 +177,31 @@ def good_base_url(run_on_loop, good_domain, good_app, protocol, proxy_map):
     server, port = run_on_loop(start_server, good_app, protocol)
 
     if protocol == "https":
-        proxy_map.set(protocol, f"{domain}:443", f"127.0.0.1:{port}")
+        domain_key = f"{domain}:443"
+        proxy_map.set(protocol, domain_key, f"127.0.0.1:{port}")
     else:
-        proxy_map.set(protocol, domain, f"127.0.0.1:{port}")
+        domain_key = domain
+        proxy_map.set(protocol, domain_key, f"127.0.0.1:{port}")
 
     yield f"{protocol}://{domain}"
     run_on_loop(server.stop)
+    proxy_map.clear(protocol, domain_key)
 
+@pytest.fixture
+def evil_base_url(run_on_loop, evil_domain, evil_app, protocol, proxy_map):
+    domain = evil_domain
+    server, port = run_on_loop(start_server, evil_app, protocol)
+
+    if protocol == "https":
+        domain_key = f"{domain}:443"
+        proxy_map.set(protocol, domain_key, f"127.0.0.1:{port}")
+    else:
+        domain_key = domain
+        proxy_map.set(protocol, domain_key, f"127.0.0.1:{port}")
+
+    yield f"{protocol}://{domain}"
+    run_on_loop(server.stop)
+    proxy_map.clear(protocol, domain_key)
 
 @pytest.fixture(params=["unrelated", "subdomain", "sibling"])
 def evil_domain(request, good_domain):
@@ -169,7 +226,7 @@ def evil_domain(request, good_domain):
 
 def start_server(app, protocol):
     sock, port = tornado.testing.bind_unused_port()
-    logging.warning("starting %s server on port %d", protocol, port)
+    logging.warning("starting %s server on port %d for app %r", protocol, port, id(app))
     if protocol == "https":
         tt_path = importlib.resources.files("tornado.test")
         ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -192,9 +249,21 @@ def test_allow(driver, good_base_url):
     """
     wait = WebDriverWait(driver, TIMEOUT)
     driver.get(f"{good_base_url}/login")
-    wait.until(EC.presence_of_element_located((By.ID, "submit")))
+    wait.until(EC.presence_of_element_located((By.ID, "good_form")))
     button = driver.find_element(By.ID, "submit")
     button.submit()
     wait.until(EC.presence_of_element_located((By.ID, "message")))
     msg = driver.find_element(By.ID, "message")
     assert f"success from {good_base_url}" in msg.text
+
+def test_reject(driver, good_base_url, evil_base_url):
+    wait = WebDriverWait(driver, TIMEOUT)
+    driver.get(f"{good_base_url}/login")
+    wait.until(EC.presence_of_element_located((By.ID, "good_form")))
+    driver.get(f"{evil_base_url}/form")
+    wait.until(EC.presence_of_element_located((By.ID, "evil_form")))
+    button = driver.find_element(By.ID, "submit")
+    button.submit()
+    wait.until(EC.presence_of_element_located((By.ID, "message")))
+    msg = driver.find_element(By.ID, "message")
+    assert f"success from {good_base_url}" not in msg.text
