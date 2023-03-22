@@ -41,9 +41,24 @@ class XSRFHostBaseHandler(BaseHandler):
         if name == "_xsrf":
             name = "__Host-xsrf"
         return super().get_cookie(name, *args, **kwargs)
+    
+class FetchMetadataBaseHandler(BaseHandler):
+    def check_xsrf_cookie(self):
+        if "sec-fetch-site" not in self.request.headers:
+            raise tornado.web.HTTPError(403, "sec-fetch-site header not found")
+        site = self.request.headers["sec-fetch-site"]
+        if site != "same-origin":
+            raise tornado.web.HTTPError(403, f"sec-fetch-site is {site}")
+        
+    def xsrf_form_html(self):
+        return ""
+    
+    @property
+    def xsrf_token(self):
+        return ""
 
 
-@pytest.fixture(params=["none", "doublesubmit", "doublesubmithost"])
+@pytest.fixture(params=["none", "doublesubmit", "doublesubmithost", "fetchmetadata"])
 def good_app(request, protocol):
     xsrf_strategy = request.param
     base_handler: typing.Any = BaseHandler
@@ -57,6 +72,9 @@ def good_app(request, protocol):
             if protocol == "http":
                 pytest.xfail("host cookies rejected without https")
             base_handler = XSRFHostBaseHandler
+            app_factory = functools.partial(tornado.web.Application, xsrf_cookies=True)
+        case "fetchmetadata":
+            base_handler = FetchMetadataBaseHandler
             app_factory = functools.partial(tornado.web.Application, xsrf_cookies=True)
         case _:
             raise NotImplementedError()
