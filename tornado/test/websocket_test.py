@@ -9,6 +9,7 @@ import unittest
 from tornado.concurrent import Future
 from tornado import gen
 from tornado.httpclient import HTTPError, HTTPRequest
+from tornado.ioloop import _get_event_loop
 from tornado.locks import Event
 from tornado.log import gen_log, app_log
 from tornado.netutil import Resolver
@@ -235,7 +236,7 @@ class WebSocketBaseTestCase(AsyncHTTPTestCase):
 
 class WebSocketTest(WebSocketBaseTestCase):
     def get_app(self):
-        self.close_future = Future()  # type: Future[None]
+        self.close_future = Future(loop=_get_event_loop())  # type: Future[None]
         return Application(
             [
                 ("/echo", EchoHandler, dict(close_future=self.close_future)),

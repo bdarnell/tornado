@@ -21,6 +21,7 @@ from tornado.testing import gen_test, AsyncTestCase
 
 
 class QueueBasicTest(AsyncTestCase):
+    @gen_test
     def test_repr_and_str(self):
         q = queues.Queue(maxsize=1)  # type: queues.Queue[None]
         self.assertIn(hex(id(q)), repr(q))
@@ -181,6 +182,7 @@ class QueuePutTest(AsyncTestCase):
         q.put(0)
         self.assertEqual(0, q.get_nowait())
 
+    @gen_test
     def test_nonblocking_put_exception(self):
         q = queues.Queue(1)  # type: queues.Queue[int]
         q.put(0)

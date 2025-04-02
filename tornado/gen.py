@@ -81,7 +81,7 @@ from tornado.concurrent import (
     future_add_done_callback,
     future_set_result_unless_cancelled,
 )
-from tornado.ioloop import IOLoop
+from tornado.ioloop import IOLoop, _get_event_loop
 from tornado.log import app_log
 from tornado.util import TimeoutError
 
@@ -139,7 +139,7 @@ def _value_from_stopiteration(e: Union[StopIteration, "Return"]) -> Any:
 
 
 def _create_future() -> Future:
-    future = Future()  # type: Future
+    future = Future(loop=_get_event_loop())  # type: Future
     # Fixup asyncio debug info by removing extraneous stack entries
     source_traceback = getattr(future, "_source_traceback", ())
     while source_traceback:
@@ -159,7 +159,7 @@ def _fake_ctx_run(f: Callable[..., _T], *args: Any, **kw: Any) -> _T:
 
 @overload
 def coroutine(
-    func: Callable[..., "Generator[Any, Any, _T]"]
+    func: Callable[..., "Generator[Any, Any, _T]"],
 ) -> Callable[..., "Future[_T]"]: ...
 
 
@@ -168,7 +168,7 @@ def coroutine(func: Callable[..., _T]) -> Callable[..., "Future[_T]"]: ...
 
 
 def coroutine(
-    func: Union[Callable[..., "Generator[Any, Any, _T]"], Callable[..., _T]]
+    func: Union[Callable[..., "Generator[Any, Any, _T]"], Callable[..., _T]],
 ) -> Callable[..., "Future[_T]"]:
     """Decorator for asynchronous generators.
 
@@ -835,7 +835,7 @@ def _wrap_awaitable(awaitable: Awaitable) -> Future:
     # Note that we use ensure_future, which handles both awaitables
     # and coroutines, rather than create_task, which only accepts
     # coroutines. (ensure_future calls create_task if given a coroutine)
-    fut = asyncio.ensure_future(awaitable)
+    fut = asyncio.ensure_future(awaitable, loop=_get_event_loop())
     # See comments on IOLoop._pending_tasks.
     loop = IOLoop.current()
     loop._register_task(fut)

@@ -19,7 +19,7 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 import tornado.platform.asyncio
 from tornado import gen
-from tornado.ioloop import IOLoop
+from tornado.ioloop import IOLoop, _get_event_loop
 from tornado.platform.asyncio import (
     AsyncIOLoop,
     to_asyncio_future,
@@ -103,7 +103,7 @@ class AsyncIOLoopTest(AsyncTestCase):
         )
 
     def test_add_thread_close_idempotent(self):
-        loop = AddThreadSelectorEventLoop(asyncio.get_event_loop())  # type: ignore
+        loop = AddThreadSelectorEventLoop(_get_event_loop())  # type: ignore
         loop.close()
         loop.close()
 
@@ -256,8 +256,8 @@ class AnyThreadEventLoopPolicyTest(unittest.TestCase):
             self.assertIsInstance(self.executor.submit(IOLoop.current).result(), IOLoop)
             # Clean up to silence leak warnings. Always use asyncio since
             # IOLoop doesn't (currently) close the underlying loop.
-            self.executor.submit(lambda: asyncio.get_event_loop().close()).result()  # type: ignore
+            self.executor.submit(lambda: _get_event_loop().close()).result()  # type: ignore
 
             asyncio.set_event_loop_policy(self.AnyThreadEventLoopPolicy())
             self.assertIsInstance(self.executor.submit(IOLoop.current).result(), IOLoop)
-            self.executor.submit(lambda: asyncio.get_event_loop().close()).result()  # type: ignore
+            self.executor.submit(lambda: _get_event_loop().close()).result()  # type: ignore

@@ -47,6 +47,7 @@ class ConditionTest(AsyncTestCase):
         self.io_loop.add_callback(self.stop)
         self.wait()
 
+    @gen_test
     def test_repr(self):
         c = locks.Condition()
         self.assertIn("Condition", repr(c))
@@ -62,8 +63,15 @@ class ConditionTest(AsyncTestCase):
 
     def test_notify_1(self):
         c = locks.Condition()
-        self.record_done(c.wait(), "wait1")
-        self.record_done(c.wait(), "wait2")
+
+        def f():
+            # In Python 3.14+, c.wait() may only be called from within a running event loop.
+            # TODO: rewrite the test_notify methods to use a regular coroutine instead of
+            # loop_briefly.
+            self.record_done(c.wait(), "wait1")
+            self.record_done(c.wait(), "wait2")
+
+        self.io_loop.run_sync(f)
         c.notify(1)
         self.loop_briefly()
         self.history.append("notify1")
@@ -74,8 +82,12 @@ class ConditionTest(AsyncTestCase):
 
     def test_notify_n(self):
         c = locks.Condition()
-        for i in range(6):
-            self.record_done(c.wait(), i)
+
+        def f():
+            for i in range(6):
+                self.record_done(c.wait(), i)
+
+        self.io_loop.run_sync(f)
 
         c.notify(3)
         self.loop_briefly()
@@ -91,8 +103,12 @@ class ConditionTest(AsyncTestCase):
 
     def test_notify_all(self):
         c = locks.Condition()
-        for i in range(4):
-            self.record_done(c.wait(), i)
+
+        def f():
+            for i in range(4):
+                self.record_done(c.wait(), i)
+
+        self.io_loop.run_sync(f)
 
         c.notify_all()
         self.loop_briefly()
@@ -203,6 +219,7 @@ class EventTest(AsyncTestCase):
         self.assertFalse("clear" in str(event))
         self.assertTrue("set" in str(event))
 
+    @gen_test
     def test_event(self):
         e = locks.Event()
         future_0 = asyncio.ensure_future(e.wait())
@@ -231,6 +248,7 @@ class EventTest(AsyncTestCase):
         e.set()
         self.assertTrue(e.is_set())
 
+    @gen_test
     def test_event_wait_clear(self):
         e = locks.Event()
         f0 = asyncio.ensure_future(e.wait())
@@ -245,6 +263,7 @@ class SemaphoreTest(AsyncTestCase):
     def test_negative_value(self):
         self.assertRaises(ValueError, locks.Semaphore, value=-1)
 
+    @gen_test
     def test_repr(self):
         sem = locks.Semaphore()
         self.assertIn("Semaphore", repr(sem))
@@ -255,6 +274,7 @@ class SemaphoreTest(AsyncTestCase):
         sem.acquire()
         self.assertIn("waiters", repr(sem))
 
+    @gen_test
     def test_acquire(self):
         sem = locks.Semaphore()
         f0 = asyncio.ensure_future(sem.acquire())
@@ -303,6 +323,7 @@ class SemaphoreTest(AsyncTestCase):
         yield gen.sleep(0.03)
         yield acquire  # No TimeoutError.
 
+    @gen_test
     def test_release_unacquired(self):
         # Unbounded releases are allowed, and increment the semaphore's value.
         sem = locks.Semaphore()
@@ -431,6 +452,7 @@ class SemaphoreContextManagerTest(AsyncTestCase):
 
 
 class BoundedSemaphoreTest(AsyncTestCase):
+    @gen_test
     def test_release_unacquired(self):
         sem = locks.BoundedSemaphore()
         self.assertRaises(ValueError, sem.release)
@@ -447,6 +469,7 @@ class BoundedSemaphoreTest(AsyncTestCase):
 
 
 class LockTests(AsyncTestCase):
+    @gen_test
     def test_repr(self):
         lock = locks.Lock()
         # No errors.
@@ -454,6 +477,7 @@ class LockTests(AsyncTestCase):
         lock.acquire()
         repr(lock)
 
+    @gen_test
     def test_acquire_release(self):
         lock = locks.Lock()
         self.assertTrue(asyncio.ensure_future(lock.acquire()).done())
@@ -508,6 +532,7 @@ class LockTests(AsyncTestCase):
         # Still locked.
         self.assertFalse(asyncio.ensure_future(lock.acquire()).done())
 
+    @gen_test
     def test_multi_release(self):
         lock = locks.Lock()
         self.assertRaises(RuntimeError, lock.release)

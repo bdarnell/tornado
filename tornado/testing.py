@@ -25,7 +25,7 @@ import warnings
 from tornado import gen
 from tornado.httpclient import AsyncHTTPClient, HTTPResponse
 from tornado.httpserver import HTTPServer
-from tornado.ioloop import IOLoop, TimeoutError
+from tornado.ioloop import IOLoop, TimeoutError, _set_event_loop
 from tornado import netutil
 from tornado.platform.asyncio import AsyncIOMainLoop
 from tornado.process import Subprocess
@@ -155,24 +155,11 @@ class AsyncTestCase(unittest.TestCase):
                 category=DeprecationWarning,
                 module=r"tornado\..*",
             )
-        if (3, 14) <= py_ver:
-            # TODO: This is a temporary hack pending resolution of
-            # https://github.com/python/cpython/issues/130322
-            # If set_event_loop is undeprecated, we can remove it; if not
-            # we need substantial changes to this class to use asyncio.Runner
-            # like IsolatedAsyncioTestCase does.
-            setup_with_context_manager(self, warnings.catch_warnings())
-            warnings.filterwarnings(
-                "ignore",
-                message="'asyncio.set_event_loop' is deprecated",
-                category=DeprecationWarning,
-                module="tornado.testing",
-            )
         super().setUp()
         if type(self).get_new_ioloop is not AsyncTestCase.get_new_ioloop:
             warnings.warn("get_new_ioloop is deprecated", DeprecationWarning)
         self.io_loop = self.get_new_ioloop()
-        asyncio.set_event_loop(self.io_loop.asyncio_loop)  # type: ignore[attr-defined]
+        _set_event_loop(self.io_loop.asyncio_loop)  # type: ignore[attr-defined]
 
     def tearDown(self) -> None:
         # Native coroutines tend to produce warnings if they're not
@@ -204,7 +191,7 @@ class AsyncTestCase(unittest.TestCase):
 
         # Clean up Subprocess, so it can be used again with a new ioloop.
         Subprocess.uninitialize()
-        asyncio.set_event_loop(None)
+        _set_event_loop(None)
         if not isinstance(self.io_loop, _NON_OWNED_IOLOOPS):
             # Try to clean up any file descriptors left open in the ioloop.
             # This avoids leaks, especially when tests are run repeatedly

@@ -600,6 +600,7 @@ class GenCoroutineTest(AsyncTestCase):
         self.assertIsNone(self.local_ref())
         self.finished = True
 
+    @gen_test
     def test_asyncio_future_debug_info(self):
         self.finished = True
         # Enable debug mode

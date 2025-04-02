@@ -34,7 +34,7 @@ import threading
 import typing
 import warnings
 from tornado.gen import convert_yielded
-from tornado.ioloop import IOLoop, _Selectable
+from tornado.ioloop import IOLoop, _Selectable, _set_event_loop, _get_event_loop
 
 from typing import (
     Any,
@@ -290,7 +290,7 @@ class AsyncIOMainLoop(BaseAsyncIOLoop):
     """
 
     def initialize(self, **kwargs: Any) -> None:  # type: ignore
-        super().initialize(asyncio.get_event_loop(), **kwargs)
+        super().initialize(_get_event_loop(), **kwargs)
 
     def _make_current(self) -> None:
         # AsyncIOMainLoop already refers to the current asyncio loop so
@@ -346,11 +346,11 @@ class AsyncIOLoop(BaseAsyncIOLoop):
     def _make_current(self) -> None:
         if not self.is_current:
             try:
-                self.old_asyncio = asyncio.get_event_loop()
+                self.old_asyncio = _get_event_loop()
             except (RuntimeError, AssertionError):
                 self.old_asyncio = None  # type: ignore
             self.is_current = True
-        asyncio.set_event_loop(self.asyncio_loop)
+        _set_event_loop(self.asyncio_loop)
 
     def _clear_current_hook(self) -> None:
         if self.is_current:

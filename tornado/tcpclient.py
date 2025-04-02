@@ -13,8 +13,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-"""A non-blocking TCP connection factory.
-"""
+"""A non-blocking TCP connection factory."""
 
 import functools
 import socket
@@ -24,7 +23,7 @@ import ssl
 import typing
 
 from tornado.concurrent import Future, future_add_done_callback
-from tornado.ioloop import IOLoop
+from tornado.ioloop import IOLoop, _get_event_loop
 from tornado.iostream import IOStream
 from tornado import gen
 from tornado.netutil import Resolver
@@ -66,8 +65,8 @@ class _Connector:
         self.io_loop = IOLoop.current()
         self.connect = connect
 
-        self.future = (
-            Future()
+        self.future = Future(
+            loop=_get_event_loop(),
         )  # type: Future[Tuple[socket.AddressFamily, Any, IOStream]]
         self.timeout = None  # type: Optional[object]
         self.connect_timeout = None  # type: Optional[object]

@@ -50,7 +50,7 @@ from tornado.concurrent import (
 )
 from tornado.escape import utf8, native_str
 from tornado import gen, httputil
-from tornado.ioloop import IOLoop
+from tornado.ioloop import IOLoop, _get_event_loop
 from tornado.util import Configurable
 
 from typing import Type, Any, Union, Dict, Callable, Optional, cast
@@ -294,7 +294,7 @@ class AsyncHTTPClient(Configurable):
         # where normal dicts get converted to HTTPHeaders objects.
         request.headers = httputil.HTTPHeaders(request.headers)
         request_proxy = _RequestProxy(request, self.defaults)
-        future = Future()  # type: Future[HTTPResponse]
+        future = Future(loop=_get_event_loop())  # type: Future[HTTPResponse]
 
         def handle_response(response: "HTTPResponse") -> None:
             if response.error:

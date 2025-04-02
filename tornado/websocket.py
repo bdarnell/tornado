@@ -26,7 +26,7 @@ import zlib
 from tornado.concurrent import Future, future_set_result_unless_cancelled
 from tornado.escape import utf8, native_str, to_unicode
 from tornado import gen, httpclient, httputil
-from tornado.ioloop import IOLoop, PeriodicCallback
+from tornado.ioloop import IOLoop, PeriodicCallback, _get_event_loop
 from tornado.iostream import StreamClosedError, IOStream
 from tornado.log import gen_log, app_log
 from tornado.netutil import Resolver
@@ -1084,7 +1084,7 @@ class WebSocketProtocol13(WebSocketProtocol):
             except StreamClosedError:
                 raise WebSocketClosedError()
 
-        return asyncio.ensure_future(wrapper())
+        return asyncio.ensure_future(wrapper(), loop=_get_event_loop())
 
     def write_ping(self, data: bytes) -> None:
         """Send ping frame."""
@@ -1355,7 +1355,9 @@ class WebSocketClientConnection(simple_httpclient._HTTPConnection):
         subprotocols: Optional[List[str]] = None,
         resolver: Optional[Resolver] = None,
     ) -> None:
-        self.connect_future = Future()  # type: Future[WebSocketClientConnection]
+        self.connect_future = Future(
+            loop=_get_event_loop()
+        )  # type: Future[WebSocketClientConnection]
         self.read_queue = Queue(1)  # type: Queue[Union[None, str, bytes]]
         self.key = base64.b64encode(os.urandom(16))
         self._on_message_callback = on_message_callback

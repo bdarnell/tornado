@@ -322,7 +322,7 @@ class Subprocess:
         """
         if cls._initialized:
             return
-        loop = asyncio.get_event_loop()
+        loop = ioloop._get_event_loop()
         loop.add_signal_handler(signal.SIGCHLD, cls._cleanup)
         cls._initialized = True
 
@@ -331,7 +331,7 @@ class Subprocess:
         """Removes the ``SIGCHLD`` handler."""
         if not cls._initialized:
             return
-        loop = asyncio.get_event_loop()
+        loop = ioloop._get_event_loop()
         loop.remove_signal_handler(signal.SIGCHLD)
         cls._initialized = False
 

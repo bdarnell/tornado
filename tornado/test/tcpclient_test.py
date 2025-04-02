@@ -18,6 +18,7 @@ import socket
 import unittest
 
 from tornado.concurrent import Future
+from tornado.ioloop import _get_event_loop
 from tornado.netutil import bind_sockets, Resolver
 from tornado.queues import Queue
 from tornado.tcpclient import TCPClient, _Connector
@@ -219,7 +220,9 @@ class ConnectorTest(AsyncTestCase):
     def create_stream(self, af, addr):
         stream = ConnectorTest.FakeStream()
         self.streams[addr] = stream
-        future = Future()  # type: Future[ConnectorTest.FakeStream]
+        future = Future(
+            loop=_get_event_loop()
+        )  # type: Future[ConnectorTest.FakeStream]
         self.connect_futures[(af, addr)] = future
         return stream, future
 

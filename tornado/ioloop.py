@@ -30,6 +30,7 @@ import functools
 import numbers
 import os
 import sys
+import threading
 import time
 import math
 import random
@@ -268,13 +269,13 @@ class IOLoop(Configurable):
            event loop is running.
         """
         try:
-            loop = asyncio.get_event_loop()
+            loop = _get_event_loop()
         except RuntimeError:
             if not instance:
                 return None
             # Create a new asyncio event loop for this thread.
             loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            _set_event_loop(loop)
 
         try:
             return IOLoop._ioloop_for_asyncio[loop]
@@ -984,3 +985,27 @@ class PeriodicCallback:
             # time.monotonic().
             # https://github.com/tornadoweb/tornado/issues/2333
             self._next_timeout += callback_time_sec
+
+
+if sys.version_info >= (3, 14):
+    _threadlocal_event_loop = threading.local()
+
+    def _set_event_loop(loop: Optional["asyncio.AbstractEventLoop"]) -> None:
+        _threadlocal_event_loop.loop = loop
+
+    def _get_event_loop() -> asyncio.AbstractEventLoop:
+        try:
+            return asyncio.get_event_loop()
+        except RuntimeError:
+            try:
+                return _threadlocal_event_loop.loop
+            except AttributeError:
+                raise RuntimeError("no current event loop")
+
+else:
+
+    def _set_event_loop(loop: Optional["asyncio.AbstractEventLoop"]) -> None:
+        asyncio.set_event_loop(loop)
+
+    def _get_event_loop() -> asyncio.AbstractEventLoop:
+        return asyncio.get_event_loop()

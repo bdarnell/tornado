@@ -985,7 +985,7 @@ class TestIOStreamStartTLS(AsyncTestCase):
             super().setUp()
             self.listener, self.port = bind_unused_port()
             self.server_stream = None
-            self.server_accepted = Future()  # type: Future[None]
+            self.server_accepted = asyncio.Event()
             netutil.add_accept_handler(self.listener, self.accept)
             self.client_stream = IOStream(
                 socket.socket()
@@ -994,8 +994,7 @@ class TestIOStreamStartTLS(AsyncTestCase):
                 self.client_stream.connect(("127.0.0.1", self.port)), self.stop
             )
             self.wait()
-            self.io_loop.add_future(self.server_accepted, self.stop)
-            self.wait()
+            self.io_loop.run_sync(self.server_accepted.wait)
         except Exception as e:
             print(e)
             raise
@@ -1013,7 +1012,7 @@ class TestIOStreamStartTLS(AsyncTestCase):
         if self.server_stream is not None:
             self.fail("should only get one connection")
         self.server_stream = IOStream(connection)
-        self.server_accepted.set_result(None)
+        self.server_accepted.set()
 
     @gen.coroutine
     def client_send_line(self, line):

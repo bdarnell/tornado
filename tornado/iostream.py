@@ -532,7 +532,7 @@ class BaseIOStream:
                 raise StreamBufferFullError("Reached maximum write buffer size")
             self._write_buffer.append(data)
             self._total_write_index += len(data)
-        future = Future()  # type: Future[None]
+        future = Future(loop=ioloop._get_event_loop())  # type: Future[None]
         future.add_done_callback(lambda f: f.exception())
         self._write_futures.append((self._total_write_index, future))
         if not self._connecting:
@@ -1171,7 +1171,7 @@ class IOStream(BaseIOStream):
 
         """
         self._connecting = True
-        future = Future()  # type: Future[_IOStreamType]
+        future = Future(loop=ioloop._get_event_loop())  # type: Future[_IOStreamType]
         self._connect_future = typing.cast("Future[IOStream]", future)
         try:
             self.socket.connect(address)

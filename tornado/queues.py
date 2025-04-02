@@ -245,7 +245,7 @@ class Queue(Generic[_T]):
            with other timeouts in Tornado).
 
         """
-        future = Future()  # type: Future[_T]
+        future = Future(loop=ioloop._get_event_loop())  # type: Future[_T]
         try:
             future.set_result(self.get_nowait())
         except QueueEmpty:
