@@ -1324,7 +1324,7 @@ class SSLIOStream(IOStream):
     wrapped when `IOStream.connect` is finished.
     """
 
-    socket: ssl.SSLSocket = None
+    socket: Optional[ssl.SSLSocket] = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """The ``ssl_options`` keyword argument may either be an

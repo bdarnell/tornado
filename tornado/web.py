@@ -207,9 +207,9 @@ class RequestHandler:
     _stream_request_body = False
 
     # Will be set in _execute.
-    _transforms: List[OutputTransform] = None
-    path_args: List[str] = None
-    path_kwargs: Dict[str, str] = None
+    _transforms: Optional[List[OutputTransform]] = None
+    path_args: Optional[List[str]] = None
+    path_kwargs: Optional[Dict[str, str]] = None
 
     def __init__(
         self,

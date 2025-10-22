@@ -55,6 +55,7 @@ import os
 import re
 import socket
 import typing
+from typing import Optional
 import unittest
 import urllib.parse
 
@@ -222,7 +223,7 @@ class SecureCookieV2Test(unittest.TestCase):
 
 
 class FinalReturnTest(WebTestCase):
-    final_return: Future = None
+    final_return: Optional[Future] = None
 
     def get_handlers(self):
         test = self

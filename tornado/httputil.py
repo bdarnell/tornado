@@ -468,11 +468,11 @@ class HTTPServerRequest:
        temporarily restored in 6.5.2.
     """
 
-    path: str = None
-    query: str = None
+    path: Optional[str] = None
+    query: Optional[str] = None
 
     # HACK: Used for stream_request_body
-    _body_future: Future[None] = None
+    _body_future: Optional[Future[None]] = None
 
     def __init__(
         self,

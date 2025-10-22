@@ -518,7 +518,7 @@ class ThreadedResolver(ExecutorResolver):
     """
 
     _threadpool = None  # type: ignore
-    _threadpool_pid: int = None
+    _threadpool_pid: Optional[int] = None
 
     def initialize(self, num_threads: int = 10) -> None:  # type: ignore
         threadpool = ThreadedResolver._create_threadpool(num_threads)
