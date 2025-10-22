@@ -258,12 +258,12 @@ class FinalReturnTest(WebTestCase):
         response = self.fetch(self.get_url("/finish"))
         self.assertEqual(response.code, 200)
         self.assertIsInstance(self.final_return, Future)
-        self.assertTrue(self.final_return.done())
+        self.assertTrue(self.final_return.done())  # type: ignore[union-attr]
 
         response = self.fetch(self.get_url("/finish"), method="POST", body=b"")
         self.assertEqual(response.code, 200)
         self.assertIsInstance(self.final_return, Future)
-        self.assertTrue(self.final_return.done())
+        self.assertTrue(self.final_return.done())  # type: ignore[union-attr]
 
     def test_render_method_return_future(self):
         response = self.fetch(self.get_url("/render"))
