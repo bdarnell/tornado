@@ -468,9 +468,6 @@ class HTTPServerRequest:
        temporarily restored in 6.5.2.
     """
 
-    path: Optional[str] = None
-    query: Optional[str] = None
-
     # HACK: Used for stream_request_body
     _body_future: Optional[Future[None]] = None
 
@@ -536,7 +533,12 @@ class HTTPServerRequest:
         self._finish_time = None
 
         if uri is not None:
+            self.path: str
+            self.query: str
             self.path, sep, self.query = uri.partition("?")
+        else:
+            self.path = ""
+            self.query = ""
         self.arguments = parse_qs_bytes(self.query, keep_blank_values=True)
         self.query_arguments = copy.deepcopy(self.arguments)
         self.body_arguments: Dict[str, List[bytes]] = {}

@@ -323,13 +323,15 @@ class Configurable:
             raise ValueError("configured class not found")
 
     @classmethod
-    def _save_configuration(cls) -> Tuple[Optional[Type[Configurable]], Dict[str, Any]]:
+    def _save_configuration(
+        cls,
+    ) -> Tuple[Optional[Type[Configurable]], Optional[Dict[str, Any]]]:
         base = cls.configurable_base()
         return (base.__impl_class, base.__impl_kwargs)
 
     @classmethod
     def _restore_configuration(
-        cls, saved: Tuple[Optional[Type[Configurable]], Dict[str, Any]]
+        cls, saved: Tuple[Optional[Type[Configurable]], Optional[Dict[str, Any]]]
     ) -> None:
         base = cls.configurable_base()
         base.__impl_class = saved[0]

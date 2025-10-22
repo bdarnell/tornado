@@ -207,7 +207,6 @@ class RequestHandler:
     _stream_request_body = False
 
     # Will be set in _execute.
-    _transforms: Optional[List[OutputTransform]] = None
     path_args: Optional[List[str]] = None
     path_kwargs: Optional[Dict[str, str]] = None
 
@@ -221,6 +220,7 @@ class RequestHandler:
 
         self.application = application
         self.request = request
+        self._transforms: List[OutputTransform] = []
         self._headers_written = False
         self._finished = False
         self._auto_finish = True
@@ -328,6 +328,7 @@ class RequestHandler:
         connection.
         """
         if _has_stream_request_body(self.__class__):
+            assert self.request._body_future is not None
             if not self.request._body_future.done():
                 self.request._body_future.set_exception(iostream.StreamClosedError())
                 self.request._body_future.exception()
@@ -1837,6 +1838,7 @@ class RequestHandler:
                 # the body has been completely received.  The Future has no
                 # result; the data has been passed to self.data_received
                 # instead.
+                assert self.request._body_future is not None
                 try:
                     await self.request._body_future
                 except iostream.StreamClosedError:
@@ -2451,6 +2453,7 @@ class _HandlerDelegate(httputil.HTTPMessageDelegate):
 
     def finish(self) -> None:
         if self.stream_request_body:
+            assert self.request._body_future is not None
             future_set_result_unless_cancelled(self.request._body_future, None)
         else:
             # Note that the body gets parsed in RequestHandler._execute so it can be in
