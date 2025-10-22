@@ -1,3 +1,4 @@
+from __future__ import annotations
 import pycares  # type: ignore
 import socket
 
@@ -36,7 +37,7 @@ class CaresResolver(Resolver):
     def initialize(self) -> None:
         self.io_loop = IOLoop.current()
         self.channel = pycares.Channel(sock_state_cb=self._sock_state_cb)
-        self.fds = {}  # type: Dict[int, int]
+        self.fds: Dict[int, int] = {}
 
     def _sock_state_cb(self, fd: int, readable: bool, writable: bool) -> None:
         state = (IOLoop.READ if readable else 0) | (IOLoop.WRITE if writable else 0)
@@ -67,7 +68,7 @@ class CaresResolver(Resolver):
             addresses = [host]
         else:
             # gethostbyname doesn't take callback as a kwarg
-            fut = Future()  # type: Future[Tuple[Any, Any]]
+            fut: Future[Tuple[Any, Any]] = Future()
             self.channel.gethostbyname(
                 host, family, lambda result, error: fut.set_result((result, error))
             )

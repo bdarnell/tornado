@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Blocking and non-blocking HTTP client interfaces.
 
 This module defines a common interface shared by two implementations,
@@ -176,7 +178,7 @@ class AsyncHTTPClient(Configurable):
 
     """
 
-    _instance_cache = None  # type: Dict[IOLoop, AsyncHTTPClient]
+    _instance_cache: Dict[IOLoop, AsyncHTTPClient] = None
 
     @classmethod
     def configurable_base(cls) -> Type[Configurable]:
@@ -294,7 +296,7 @@ class AsyncHTTPClient(Configurable):
         # where normal dicts get converted to HTTPHeaders objects.
         request.headers = httputil.HTTPHeaders(request.headers)
         request_proxy = _RequestProxy(request, self.defaults)
-        future = Future()  # type: Future[HTTPResponse]
+        future: Future[HTTPResponse] = Future()
 
         def handle_response(response: "HTTPResponse") -> None:
             if response.error:
@@ -339,7 +341,7 @@ class AsyncHTTPClient(Configurable):
 class HTTPRequest:
     """HTTP client request object."""
 
-    _headers = None  # type: Union[Dict[str, str], httputil.HTTPHeaders]
+    _headers: Union[Dict[str, str], httputil.HTTPHeaders] = None
 
     # Default values for HTTPRequest parameters.
     # Merged with the values on the request object by AsyncHTTPClient
@@ -533,7 +535,7 @@ class HTTPRequest:
         self.max_redirects = max_redirects
         self.user_agent = user_agent
         if decompress_response is not None:
-            self.decompress_response = decompress_response  # type: Optional[bool]
+            self.decompress_response: Optional[bool] = decompress_response
         else:
             self.decompress_response = use_gzip
         self.network_interface = network_interface
@@ -624,9 +626,9 @@ class HTTPResponse:
     """
 
     # I'm not sure why these don't get type-inferred from the references in __init__.
-    error = None  # type: Optional[BaseException]
+    error: Optional[BaseException] = None
     _error_is_response_code = False
-    request = None  # type: HTTPRequest
+    request: HTTPRequest = None
 
     def __init__(
         self,
@@ -652,7 +654,7 @@ class HTTPResponse:
         else:
             self.headers = httputil.HTTPHeaders()
         self.buffer = buffer
-        self._body = None  # type: Optional[bytes]
+        self._body: Optional[bytes] = None
         if effective_url is None:
             self.effective_url = request.url
         else:

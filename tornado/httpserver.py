@@ -13,6 +13,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 """A non-blocking, single-threaded HTTP server.
 
 Typical applications have little direct interaction with the `HTTPServer`
@@ -202,7 +204,7 @@ class HTTPServer(TCPServer, Configurable, httputil.HTTPServerConnectionDelegate)
             max_buffer_size=max_buffer_size,
             read_chunk_size=chunk_size,
         )
-        self._connections = set()  # type: Set[HTTP1ServerConnection]
+        self._connections: Set[HTTP1ServerConnection] = set()
         self.trusted_downstream = trusted_downstream
 
     @classmethod
@@ -265,9 +267,9 @@ class _CallableAdapter(httputil.HTTPMessageDelegate):
     ) -> None:
         self.connection = request_conn
         self.request_callback = request_callback
-        self.request = None  # type: Optional[httputil.HTTPServerRequest]
+        self.request: Optional[httputil.HTTPServerRequest] = None
         self.delegate = None
-        self._chunks = []  # type: List[bytes]
+        self._chunks: List[bytes] = []
 
     def headers_received(
         self,

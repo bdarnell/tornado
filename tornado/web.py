@@ -13,6 +13,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 """``tornado.web`` provides a simple web framework with asynchronous
 features that allow it to scale to large numbers of open connections,
 making it ideal for `long polling
@@ -198,16 +200,16 @@ class RequestHandler:
         "OPTIONS",
     )
 
-    _template_loaders = {}  # type: Dict[str, template.BaseLoader]
+    _template_loaders: Dict[str, template.BaseLoader] = {}
     _template_loader_lock = threading.Lock()
     _remove_control_chars_regex = re.compile(r"[\x00-\x08\x0e-\x1f]")
 
     _stream_request_body = False
 
     # Will be set in _execute.
-    _transforms = None  # type: List[OutputTransform]
-    path_args = None  # type: List[str]
-    path_kwargs = None  # type: Dict[str, str]
+    _transforms: List[OutputTransform] = None
+    path_args: List[str] = None
+    path_kwargs: Dict[str, str] = None
 
     def __init__(
         self,
@@ -244,7 +246,7 @@ class RequestHandler:
     def _initialize(self) -> None:
         pass
 
-    initialize = _initialize  # type: Callable[..., None]
+    initialize: Callable[..., None] = _initialize
     """Hook for subclass initialization. Called for each request.
 
     A dictionary passed as the third argument of a ``URLSpec`` will be
@@ -272,13 +274,13 @@ class RequestHandler:
     def _unimplemented_method(self, *args: str, **kwargs: str) -> None:
         raise HTTPError(405)
 
-    head = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
-    get = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
-    post = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
-    delete = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
-    patch = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
-    put = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
-    options = _unimplemented_method  # type: Callable[..., Optional[Awaitable[None]]]
+    head: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
+    get: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
+    post: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
+    delete: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
+    patch: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
+    put: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
+    options: Callable[..., Optional[Awaitable[None]]] = _unimplemented_method
 
     def prepare(self) -> Optional[Awaitable[None]]:
         """Called at the beginning of a request before  `get`/`post`/etc.
@@ -340,7 +342,7 @@ class RequestHandler:
             }
         )
         self.set_default_headers()
-        self._write_buffer = []  # type: List[bytes]
+        self._write_buffer: List[bytes] = []
         self._status_code = 200
         self._reason = httputil.responses[200]
 
@@ -687,9 +689,7 @@ class RequestHandler:
             # Don't let us accidentally inject bad stuff
             raise ValueError(f"Invalid cookie {name!r}: {value!r}")
         if not hasattr(self, "_new_cookie"):
-            self._new_cookie = (
-                http.cookies.SimpleCookie()
-            )  # type: http.cookies.SimpleCookie
+            self._new_cookie: http.cookies.SimpleCookie = http.cookies.SimpleCookie()
         if name in self._new_cookie:
             del self._new_cookie[name]
         self._new_cookie[name] = value
@@ -1058,7 +1058,7 @@ class RequestHandler:
         Override this method in a sub-classed controller to change the output.
         """
         paths = []
-        unique_paths = set()  # type: Set[str]
+        unique_paths: Set[str] = set()
 
         for path in js_files:
             if not is_absolute(path):
@@ -1093,7 +1093,7 @@ class RequestHandler:
         Override this method in a sub-classed controller to change the output.
         """
         paths = []
-        unique_paths = set()  # type: Set[str]
+        unique_paths: Set[str] = set()
 
         for path in css_files:
             if not is_absolute(path):
@@ -1232,7 +1232,7 @@ class RequestHandler:
             if self.request.method != "HEAD":
                 return self.request.connection.write(chunk)
             else:
-                future = Future()  # type: Future[None]
+                future: Future[None] = Future()
                 future.set_result(None)
                 return future
 
@@ -1941,7 +1941,7 @@ class RequestHandler:
     def _ui_module(self, name: str, module: Type["UIModule"]) -> Callable[..., str]:
         def render(*args, **kwargs) -> str:  # type: ignore
             if not hasattr(self, "_active_modules"):
-                self._active_modules = {}  # type: Dict[str, UIModule]
+                self._active_modules: Dict[str, UIModule] = {}
             if name not in self._active_modules:
                 self._active_modules[name] = module(self)
             rendered = self._active_modules[name].render(*args, **kwargs)
@@ -2185,7 +2185,7 @@ class Application(ReversibleRouter):
         **settings: Any,
     ) -> None:
         if transforms is None:
-            self.transforms = []  # type: List[Type[OutputTransform]]
+            self.transforms: List[Type[OutputTransform]] = []
             if settings.get("compress_response") or settings.get("gzip"):
                 self.transforms.append(GZipContentEncoding)
         else:
@@ -2197,7 +2197,7 @@ class Application(ReversibleRouter):
             "xsrf_form_html": _xsrf_form_html,
             "Template": TemplateModule,
         }
-        self.ui_methods = {}  # type: Dict[str, Callable[..., str]]
+        self.ui_methods: Dict[str, Callable[..., str]] = {}
         self._load_ui_modules(settings.get("ui_modules", {}))
         self._load_ui_methods(settings.get("ui_methods", {}))
         if self.settings.get("static_path"):
@@ -2429,7 +2429,7 @@ class _HandlerDelegate(httputil.HTTPMessageDelegate):
         self.handler_kwargs = handler_kwargs or {}
         self.path_args = path_args or []
         self.path_kwargs = path_kwargs or {}
-        self.chunks = []  # type: List[bytes]
+        self.chunks: List[bytes] = []
         self.stream_request_body = _has_stream_request_body(self.handler_class)
 
     def headers_received(
@@ -2738,7 +2738,7 @@ class StaticFileHandler(RequestHandler):
 
     CACHE_MAX_AGE = 86400 * 365 * 10  # 10 years
 
-    _static_hashes = {}  # type: Dict[str, Optional[str]]
+    _static_hashes: Dict[str, Optional[str]] = {}
     _lock = threading.Lock()  # protects _static_hashes
 
     def initialize(self, path: str, default_filename: Optional[str] = None) -> None:
@@ -3000,7 +3000,7 @@ class StaticFileHandler(RequestHandler):
             if start is not None:
                 file.seek(start)
             if end is not None:
-                remaining = end - (start or 0)  # type: Optional[int]
+                remaining: Optional[int] = end - (start or 0)
             else:
                 remaining = None
             while True:
@@ -3473,8 +3473,8 @@ class TemplateModule(UIModule):
     def __init__(self, handler: RequestHandler) -> None:
         super().__init__(handler)
         # keep resources in both a list and a dict to preserve order
-        self._resource_list = []  # type: List[Dict[str, Any]]
-        self._resource_dict = {}  # type: Dict[str, Dict[str, Any]]
+        self._resource_list: List[Dict[str, Any]] = []
+        self._resource_dict: Dict[str, Dict[str, Any]] = {}
 
     def render(self, path: str, **kwargs: Any) -> bytes:
         def set_resources(**kwargs) -> str:  # type: ignore

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import datetime
 import os
 import shutil
@@ -17,7 +18,7 @@ class TranslationLoaderTest(unittest.TestCase):
         tornado.locale.Locale._cache = {}
 
     def setUp(self):
-        self.saved = {}  # type: dict
+        self.saved: dict = {}
         for var in TranslationLoaderTest.SAVE_VARS:
             self.saved[var] = getattr(tornado.locale, var)
         self.clear_locale_cache()

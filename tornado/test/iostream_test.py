@@ -1,3 +1,4 @@
+from __future__ import annotations
 from tornado.concurrent import Future
 from tornado import gen
 from tornado import netutil
@@ -763,7 +764,7 @@ class TestIOStreamMixin(TestReadWriteMixin):
     @gen.coroutine
     def make_iostream_pair(self, **kwargs):
         listener, port = bind_unused_port()
-        server_stream_fut = Future()  # type: Future[IOStream]
+        server_stream_fut: Future[IOStream] = Future()
 
         def accept_callback(connection, address):
             server_stream_fut.set_result(
@@ -985,11 +986,9 @@ class TestIOStreamStartTLS(AsyncTestCase):
             super().setUp()
             self.listener, self.port = bind_unused_port()
             self.server_stream = None
-            self.server_accepted = Future()  # type: Future[None]
+            self.server_accepted: Future[None] = Future()
             netutil.add_accept_handler(self.listener, self.accept)
-            self.client_stream = IOStream(
-                socket.socket()
-            )  # type: typing.Optional[IOStream]
+            self.client_stream: typing.Optional[IOStream] = IOStream(socket.socket())
             self.io_loop.add_future(
                 self.client_stream.connect(("127.0.0.1", self.port)), self.stop
             )
@@ -1135,7 +1134,7 @@ class WaitForHandshakeTest(AsyncTestCase):
     @gen_test
     def test_wait_for_handshake_future(self):
         test = self
-        handshake_future = Future()  # type: Future[None]
+        handshake_future: Future[None] = Future()
 
         class TestServer(TCPServer):
             def handle_stream(self, stream, address):
@@ -1153,7 +1152,7 @@ class WaitForHandshakeTest(AsyncTestCase):
     @gen_test
     def test_wait_for_handshake_already_waiting_error(self):
         test = self
-        handshake_future = Future()  # type: Future[None]
+        handshake_future: Future[None] = Future()
 
         class TestServer(TCPServer):
             @gen.coroutine
@@ -1169,7 +1168,7 @@ class WaitForHandshakeTest(AsyncTestCase):
 
     @gen_test
     def test_wait_for_handshake_already_connected(self):
-        handshake_future = Future()  # type: Future[None]
+        handshake_future: Future[None] = Future()
 
         class TestServer(TCPServer):
             @gen.coroutine

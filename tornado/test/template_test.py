@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import traceback
 import unittest
@@ -224,7 +225,7 @@ three{%end%}
             self.assertTrue("# test.html:2" in traceback.format_exc())
 
     def test_error_line_number_module(self):
-        loader = None  # type: typing.Optional[DictLoader]
+        loader: typing.Optional[DictLoader] = None
 
         def load_generate(path, **kwargs):
             assert loader is not None

@@ -12,6 +12,8 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 """Logging support for Tornado.
 
 Tornado uses three logger streams:
@@ -139,7 +141,7 @@ class LogFormatter(logging.Formatter):
         logging.Formatter.__init__(self, datefmt=datefmt)
         self._fmt = fmt
 
-        self._colors = {}  # type: Dict[int, str]
+        self._colors: Dict[int, str] = {}
         if color and _stderr_supports_color():
             if curses is not None:
                 fg_color = curses.tigetstr("setaf") or curses.tigetstr("setf") or b""
@@ -232,12 +234,12 @@ def enable_pretty_logging(
     if options.log_file_prefix:
         rotate_mode = options.log_rotate_mode
         if rotate_mode == "size":
-            channel = logging.handlers.RotatingFileHandler(
+            channel: logging.Handler = logging.handlers.RotatingFileHandler(
                 filename=options.log_file_prefix,
                 maxBytes=options.log_file_max_size,
                 backupCount=options.log_file_num_backups,
                 encoding="utf-8",
-            )  # type: logging.Handler
+            )
         elif rotate_mode == "time":
             channel = logging.handlers.TimedRotatingFileHandler(
                 filename=options.log_file_prefix,

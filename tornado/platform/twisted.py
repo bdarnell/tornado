@@ -9,6 +9,8 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 """Bridges between the Twisted package and Tornado."""
 
 import sys
@@ -50,7 +52,7 @@ if hasattr(gen.convert_yielded, "register"):
 
     @gen.convert_yielded.register(Deferred)
     def _(d: Deferred) -> Future:
-        f = Future()  # type: Future[typing.Any]
+        f: Future[typing.Any] = Future()
 
         def errback(failure: failure.Failure) -> None:
             try:

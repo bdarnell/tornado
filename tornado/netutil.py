@@ -13,6 +13,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from __future__ import annotations
+
 """Miscellaneous network utility code."""
 
 import asyncio
@@ -100,7 +102,7 @@ def bind_sockets(
     if flags is None:
         flags = socket.AI_PASSIVE
     bound_port = None
-    unique_addresses = set()  # type: set
+    unique_addresses: set = set()
     for res in sorted(
         socket.getaddrinfo(address, port, family, socket.SOCK_STREAM, 0, flags),
         key=lambda x: x[0],
@@ -516,7 +518,7 @@ class ThreadedResolver(ExecutorResolver):
     """
 
     _threadpool = None  # type: ignore
-    _threadpool_pid = None  # type: int
+    _threadpool_pid: int = None
 
     def initialize(self, num_threads: int = 10) -> None:  # type: ignore
         threadpool = ThreadedResolver._create_threadpool(num_threads)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import base64
 import binascii
 from contextlib import closing
@@ -204,7 +205,7 @@ class HTTPClientCommonTestCase(AsyncHTTPTestCase):
 
     def test_streaming_callback(self):
         # streaming_callback is also tested in test_chunked
-        chunks = []  # type: typing.List[bytes]
+        chunks: typing.List[bytes] = []
         response = self.fetch("/hello", streaming_callback=chunks.append)
         # with streaming_callback, data goes to the callback and not response.body
         self.assertEqual(chunks, [b"Hello world!"])
@@ -219,7 +220,7 @@ class HTTPClientCommonTestCase(AsyncHTTPTestCase):
         response = self.fetch("/chunk")
         self.assertEqual(response.body, b"asdfqwer")
 
-        chunks = []  # type: typing.List[bytes]
+        chunks: typing.List[bytes] = []
         response = self.fetch("/chunk", streaming_callback=chunks.append)
         self.assertEqual(chunks, [b"asdf", b"qwer"])
         self.assertFalse(response.body)
