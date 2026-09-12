@@ -45,7 +45,12 @@ CR_OR_LF_RE = re.compile(b"\r|\n")
 
 
 class _CurlStreamingBuffer:
-    """Delivers response body chunks from libcurl to a ``streaming_callback``.
+    """Delivers response body chunks from libcurl to their destination.
+
+    That destination is the request's ``streaming_callback`` if it has one,
+    and otherwise the buffer that becomes `.HTTPResponse.body`. Both go
+    through here so that ``max_body_size`` and the backpressure below apply
+    the same way either way.
 
     libcurl runs its write callback from inside
     ``curl_multi_socket_action``, where it is not safe to run application
@@ -95,10 +100,13 @@ class _CurlStreamingBuffer:
     def write(self, chunk: bytes) -> int:
         """libcurl ``WRITEFUNCTION`` callback."""
         if self.total + len(chunk) > self.client.max_body_size:
-            # max_body_size applies here as well as to a buffered response:
-            # it is a safeguard for applications that do not impose a limit
-            # of their own on what they do with the chunks. Writing less
-            # than we were given makes libcurl fail the transfer.
+            # A safeguard for applications that do not impose a limit of
+            # their own on what they do with the chunks. Writing less than
+            # we were given makes libcurl fail the transfer, and _finish
+            # uses body_too_large to say why. libcurl's own
+            # CURLOPT_MAXFILESIZE is no help: outside of very recent
+            # versions it is measured against the compressed size, which a
+            # "decompression bomb" keeps small.
             self.body_too_large = True
             return 0
         if self.size >= self.max_buffer_size:
@@ -159,6 +167,8 @@ class _CurlStreamingBuffer:
     def finish(self) -> None:
         """Deliver any remaining data at the end of the request.
 
+        This must happen before `.HTTPResponse` is constructed: without a
+        ``streaming_callback`` it is what fills in the response buffer.
         The curl handle may be reset and reused after this, so we must not
         touch it again.
         """
@@ -328,7 +338,6 @@ class CurlAsyncHTTPClient(AsyncHTTPClient):
                     "headers": httputil.HTTPHeaders(),
                     "buffer": BytesIO(),
                     "streaming_buffer": None,
-                    "body_too_large": False,
                     "request": request,
                     "callback": callback,
                     "queue_start_time": queue_start_time,
@@ -370,19 +379,17 @@ class CurlAsyncHTTPClient(AsyncHTTPClient):
         curl.info = None  # type: ignore
         self._multi.remove_handle(curl)
         streaming_buffer = info["streaming_buffer"]
-        body_too_large = info["body_too_large"]
-        if streaming_buffer is not None:
-            body_too_large = body_too_large or streaming_buffer.body_too_large
-            # Make sure everything that was received reaches the
-            # streaming_callback before the final response.
-            try:
-                streaming_buffer.finish()
-            except Exception:
-                self.handle_callback_exception(info["request"].streaming_callback)
+        # Make sure everything that was received reaches the callback (which
+        # fills in `buffer` when there is no streaming_callback) before the
+        # final response.
+        try:
+            streaming_buffer.finish()
+        except Exception:
+            self.handle_callback_exception(info["request"].streaming_callback)
         buffer = info["buffer"]
         if curl_error:
             assert curl_message is not None
-            if body_too_large:
+            if streaming_buffer.body_too_large:
                 curl_message = "body exceeded max_body_size of %d bytes" % (
                     self.max_body_size,
                 )
@@ -484,39 +491,19 @@ class CurlAsyncHTTPClient(AsyncHTTPClient):
                 self._curl_header_callback, headers, request.header_callback
             ),
         )
-        write_function: Callable[[bytes], int]
         if request.streaming_callback:
-
             if gen.is_coroutine_function(
                 request.streaming_callback
             ) or inspect.iscoroutinefunction(request.streaming_callback):
                 raise TypeError(
                     "'CurlAsyncHTTPClient' does not support async streaming_callbacks."
                 )
-
-            streaming_buffer = _CurlStreamingBuffer(
-                self, curl, request.streaming_callback
-            )
-            curl.info["streaming_buffer"] = streaming_buffer  # type: ignore
-            write_function = streaming_buffer.write
+            body_callback: Callable[[bytes], Any] = request.streaming_callback
         else:
-            # Count the buffered body against max_body_size, as
-            # _CurlStreamingBuffer does for the streaming case. Here the
-            # whole body is held in memory, so a response that decompresses
-            # past the limit cannot be retrieved at all -- only refused
-            # before it exhausts memory. libcurl's CURLOPT_MAXFILESIZE is
-            # no help: outside of very recent versions it is measured
-            # against the compressed size, which a bomb keeps small.
-            def write_function(chunk: bytes) -> int:
-                if buffer.tell() + len(chunk) > self.max_body_size:
-                    curl.info["body_too_large"] = True  # type: ignore
-                    # Writing less than we were given makes libcurl fail
-                    # the transfer with CURLE_WRITE_ERROR; _finish uses the
-                    # flag above to replace its message with ours.
-                    return 0
-                return buffer.write(chunk)
-
-        curl.setopt(pycurl.WRITEFUNCTION, write_function)
+            body_callback = buffer.write
+        streaming_buffer = _CurlStreamingBuffer(self, curl, body_callback)
+        curl.info["streaming_buffer"] = streaming_buffer  # type: ignore
+        curl.setopt(pycurl.WRITEFUNCTION, streaming_buffer.write)
         curl.setopt(pycurl.FOLLOWLOCATION, request.follow_redirects)
         curl.setopt(pycurl.MAXREDIRS, request.max_redirects)
         assert request.connect_timeout is not None
