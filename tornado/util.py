@@ -63,13 +63,65 @@ class GzipDecompressor:
 
     The interface is like that of `zlib.decompressobj` (without some of the
     optional arguments, but it understands gzip headers and checksums.
+
+    .. versionchanged:: 6.6
+
+       Streams containing multiple concatenated gzip members (as produced by
+       ``cat a.gz b.gz``, and permitted by :rfc:`1952`) are now decompressed
+       in full. Previously everything after the first member was silently
+       discarded, or raised an error depending on how the stream was chunked.
+       Trailing zero-byte padding, which is also legal, is now ignored
+       instead of raising an error.
     """
 
     def __init__(self) -> None:
+        self.decompressobj = self._new_decompressobj()
+        # Input that has not been passed to ``decompressobj`` yet, either
+        # because ``max_length`` cut a call short or because it belongs to a
+        # later member of the stream. This is exactly what `unconsumed_tail`
+        # reports; it is never fed to the decompressor on its own, so callers
+        # must pass it back in as documented.
+        self._unconsumed_tail = b""
+        self._flushed = False
+
+    @staticmethod
+    def _new_decompressobj() -> "zlib._Decompress":
         # Magic parameter makes zlib module understand gzip header
         # http://stackoverflow.com/questions/1838699/how-can-i-decompress-a-gzip-stream-with-zlib
         # This works on cpython and pypy, but not jython.
-        self.decompressobj = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        return zlib.decompressobj(16 + zlib.MAX_WBITS)
+
+    def _decompress(self, data: bytes, max_length: int) -> tuple[bytes, bytes]:
+        """Decompresses ``data``, returning ``(output, unconsumed_input)``.
+
+        Advances to the next member of the stream as each one ends, in the
+        same way as `gzip.GzipFile`.
+        """
+        result = bytearray()
+        while data:
+            if self.decompressobj.eof:
+                # The current member is complete. A gzip stream may be
+                # padded with zero bytes (see http://www.gzip.org/#faq8);
+                # anything else is the start of another member.
+                data = data.lstrip(b"\x00")
+                if not data:
+                    break
+                self.decompressobj = self._new_decompressobj()
+            if max_length:
+                limit = max_length - len(result)
+                if limit <= 0:
+                    break
+            else:
+                limit = 0
+            result.extend(self.decompressobj.decompress(data, limit))
+            if self.decompressobj.eof:
+                # Once a member ends, the rest of the input is reported in
+                # ``unused_data``. ``unconsumed_tail`` may still hold a stale
+                # copy of the same bytes, so it must not be used here.
+                data = self.decompressobj.unused_data
+            else:
+                data = self.decompressobj.unconsumed_tail
+        return bytes(result), data
 
     def decompress(self, value: bytes, max_length: int = 0) -> bytes:
         """Decompress a chunk, returning newly-available data.
@@ -82,12 +134,17 @@ class GzipDecompressor:
         in ``unconsumed_tail``; you must retrieve this value and pass
         it back to a future call to `decompress` if it is not empty.
         """
-        return self.decompressobj.decompress(value, max_length)
+        if self._flushed:
+            raise RuntimeError("decompress() called after flush()")
+        if not value:
+            return b""
+        result, self._unconsumed_tail = self._decompress(value, max_length)
+        return result
 
     @property
     def unconsumed_tail(self) -> bytes:
         """Returns the unconsumed portion left over"""
-        return self.decompressobj.unconsumed_tail
+        return self._unconsumed_tail
 
     def flush(self) -> bytes:
         """Return any remaining buffered data not yet returned by decompress.
@@ -95,7 +152,14 @@ class GzipDecompressor:
         Also checks for errors such as truncated input.
         No other methods may be called on this object after `flush`.
         """
-        return self.decompressobj.flush()
+        if self._flushed:
+            raise RuntimeError("flush() called twice")
+        self._flushed = True
+        # Anything left in unconsumed_tail belongs to this stream too; the
+        # caller is done handing us data, so process it now.
+        result, tail = self._decompress(self._unconsumed_tail, 0)
+        self._unconsumed_tail = tail
+        return result + self.decompressobj.flush()
 
 
 def import_object(name: str) -> Any:
