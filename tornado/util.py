@@ -67,11 +67,11 @@ class GzipDecompressor:
     .. versionchanged:: 6.6
 
        Streams containing multiple concatenated gzip members (as produced by
-       ``cat a.gz b.gz``, and permitted by :rfc:`1952`) are now decompressed
-       in full. Previously everything after the first member was silently
-       discarded, or raised an error depending on how the stream was chunked.
-       Trailing zero-byte padding, which is also legal, is now ignored
-       instead of raising an error.
+       ``cat a.gz b.gz``, and defined by :rfc:`1952` section 2.2) are now
+       decompressed in full. Previously everything after the first member was
+       silently discarded, or raised an error depending on how the stream was
+       chunked. Trailing zero bytes, which ``gunzip`` also ignores, no longer
+       raise an error.
     """
 
     def __init__(self) -> None:
@@ -100,9 +100,11 @@ class GzipDecompressor:
         result = bytearray()
         while data:
             if self.decompressobj.eof:
-                # The current member is complete. A gzip stream may be
-                # padded with zero bytes (see http://www.gzip.org/#faq8);
-                # anything else is the start of another member.
+                # The current member is complete. Trailing zero bytes are
+                # ignored, as `gunzip` ignores them
+                # (https://www.gzip.org/ancient/#faq8); some servers send
+                # them (see the response in #2714). Anything else is the
+                # start of another member.
                 data = data.lstrip(b"\x00")
                 if not data:
                     break

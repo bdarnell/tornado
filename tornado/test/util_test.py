@@ -442,7 +442,8 @@ class GzipDecompressorTest(TestCase):
         self._assert_roundtrip(self._compress(*members), b"".join(members))
 
     def test_trailing_padding(self):
-        # Gzip streams may be padded with zero bytes (http://www.gzip.org/#faq8).
+        # Trailing zero bytes are ignored rather than treated as a truncated
+        # member (https://www.gzip.org/ancient/#faq8).
         data = b"padded\n" * 100
         self._assert_roundtrip(self._compress(data, padding=b"\0" * 16), data)
 

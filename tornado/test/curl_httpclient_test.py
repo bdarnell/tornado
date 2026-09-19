@@ -57,6 +57,13 @@ class CurlHTTPClientCommonTestCase(httpclient_test.HTTPClientCommonTestCase):
     # libcurl was built with it (which is common).
     decompresses_brotli = pycurl is not None and "brotli" in pycurl.version
 
+    # libcurl rejects a gzip response with anything after the first member:
+    # additional members fail with "Multi-member gzip response not
+    # supported", and trailing zero bytes with a bare
+    # CURLE_BAD_CONTENT_ENCODING. Decoding those is libcurl's job, not
+    # ours; this only pins down what it does today.
+    decodes_gzip_tail = False
+
     def get_http_client(self):
         client = CurlAsyncHTTPClient(defaults=dict(allow_ipv6=False))
         # make sure AsyncHTTPClient magic doesn't give us the wrong class

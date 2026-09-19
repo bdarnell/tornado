@@ -272,6 +272,37 @@ class BrotliBombHandler(RequestHandler):
         self.write(BROTLI_BOMB)
 
 
+# Size of each member of the response served by `GzipTailHandler`. Larger
+# than the default ``chunk_size``, so that the client's decompressor is
+# driven with a non-zero ``max_length``.
+GZIP_TAIL_MEMBER_SIZE = 100 * 1024
+
+
+@functools.lru_cache(maxsize=None)
+def gzip_tail_members() -> tuple:
+    """Returns the decompressed members of the response below."""
+    return (b"a" * GZIP_TAIL_MEMBER_SIZE, b"b" * GZIP_TAIL_MEMBER_SIZE)
+
+
+class GzipTailHandler(RequestHandler):
+    """Sends a gzip response that continues past the first member.
+
+    ``?members=2`` sends two concatenated members, which :rfc:`1952` section
+    2.2 defines as one gzip stream; ``?pad=1`` appends zero bytes, which
+    ``gunzip`` ignores (https://www.gzip.org/ancient/#faq8).
+    """
+
+    def get(self):
+        # Set Content-Encoding manually to avoid automatic gzip encoding.
+        self.set_header("Content-Type", "text/plain")
+        self.set_header("Content-Encoding", "gzip")
+        members = int(self.get_argument("members", "1"))
+        body = b"".join(gzip.compress(m) for m in gzip_tail_members()[:members])
+        if self.get_argument("pad", None):
+            body += b"\0" * 8
+        self.write(body)
+
+
 class LargeBodyHandler(RequestHandler):
     def get(self):
         # An incompressible content type, so that the server's gzip
@@ -292,6 +323,14 @@ class HTTPClientCommonTestCase(AsyncHTTPTestCase):
     # decodes an encoding it did not request (see BrotliBombHandler).
     decompresses_brotli = False
 
+    # Whether the client decodes a gzip response that continues past the
+    # first member (see GzipTailHandler). Both forms of this are legal;
+    # `.GzipDecompressor` handles them and libcurl refuses them outright, so
+    # it is each implementation's subclass that sets this. Here the client
+    # under test is whichever one --httpclient names, so the answer is not
+    # known and the tests below are skipped.
+    decodes_gzip_tail: typing.Optional[bool] = None
+
     def get_app(self):
         return Application(
             [
@@ -310,6 +349,7 @@ class HTTPClientCommonTestCase(AsyncHTTPTestCase):
                 url("/patch", PatchHandler),
                 url("/set_header", SetHeaderHandler),
                 url("/invalid_gzip", InvalidGzipHandler),
+                url("/gzip_tail", GzipTailHandler),
                 url("/header-encoding", HeaderEncodingHandler),
                 url("/echo_headers", EchoHeadersHandler),
                 url("/gzip_bomb", GzipBombHandler),
@@ -683,6 +723,30 @@ Transfer-Encoding: chunked
                 self.assertEqual(response.body[:14], b"Hello World 0\n")
             except HTTPError:
                 pass  # acceptable
+
+    def skip_unless_gzip_tail_known(self):
+        if self.decodes_gzip_tail is None:
+            self.skipTest("client's handling of gzip tails is not declared here")
+
+    def test_concatenated_gzip(self):
+        self.skip_unless_gzip_tail_known()
+        if not self.decodes_gzip_tail:
+            with self.assertRaises(HTTPError):
+                self.fetch("/gzip_tail?members=2")
+            return
+        response = self.fetch("/gzip_tail?members=2")
+        self.assertEqual(response.body, b"".join(gzip_tail_members()))
+
+    def test_gzip_with_padding(self):
+        # This is the shape of the response reported in #2714: one member
+        # followed by a run of zero bytes.
+        self.skip_unless_gzip_tail_known()
+        if not self.decodes_gzip_tail:
+            with self.assertRaises(HTTPError):
+                self.fetch("/gzip_tail?pad=1")
+            return
+        response = self.fetch("/gzip_tail?pad=1")
+        self.assertEqual(response.body, gzip_tail_members()[0])
 
     def test_header_callback(self):
         first_line = []

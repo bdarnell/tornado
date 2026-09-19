@@ -10,7 +10,6 @@
 # implementation.
 import collections
 import errno
-import gzip
 import logging
 import os
 import re
@@ -57,6 +56,9 @@ from tornado.web import Application, RequestHandler, stream_request_body, url
 
 
 class SimpleHTTPClientCommonTestCase(httpclient_test.HTTPClientCommonTestCase):
+    # Our own decompressor handles concatenated members and zero padding.
+    decodes_gzip_tail = True
+
     def get_http_client(self):
         client = SimpleAsyncHTTPClient(force_instance=True)
         self.assertTrue(isinstance(client, SimpleAsyncHTTPClient))
@@ -982,42 +984,3 @@ class ChunkedWithContentLengthTest(AsyncHTTPTestCase):
         ):
             with self.assertRaises(HTTPStreamClosedError):
                 self.fetch("/chunkwithcl", raise_error=True)
-
-
-class ConcatenatedGzipTest(AsyncHTTPTestCase):
-    """A gzip stream may contain several members, and trailing zero padding.
-
-    This exercises `.GzipDecompressor` through `_GzipMessageDelegate`, whose
-    bodies are larger than the connection's ``chunk_size`` and are therefore
-    decompressed with a ``max_length`` cap.
-    """
-
-    MEMBERS = [b"a" * 100000, b"b" * 100000]
-
-    def get_app(self):
-        members = self.MEMBERS
-
-        class ConcatenatedGzipHandler(RequestHandler):
-            def get(self):
-                # Set Content-Encoding manually to avoid the automatic
-                # single-member gzip encoding.
-                self.set_header("Content-Type", "text/plain")
-                self.set_header("Content-Encoding", "gzip")
-                body = b"".join(gzip.compress(member) for member in members)
-                if self.get_argument("pad", None):
-                    # Zero padding is legal (http://www.gzip.org/#faq8).
-                    body += b"\0" * 8
-                self.write(body)
-
-        return Application([("/concatenated_gzip", ConcatenatedGzipHandler)])
-
-    def get_http_client(self):
-        return SimpleAsyncHTTPClient(force_instance=True)
-
-    def test_concatenated_gzip(self):
-        response = self.fetch("/concatenated_gzip")
-        self.assertEqual(response.body, b"".join(self.MEMBERS))
-
-    def test_concatenated_gzip_with_padding(self):
-        response = self.fetch("/concatenated_gzip?pad=1")
-        self.assertEqual(response.body, b"".join(self.MEMBERS))
