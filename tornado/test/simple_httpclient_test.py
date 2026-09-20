@@ -10,6 +10,7 @@
 # implementation.
 import collections
 import errno
+import gzip
 import logging
 import os
 import re
@@ -56,6 +57,9 @@ from tornado.web import Application, RequestHandler, stream_request_body, url
 
 
 class SimpleHTTPClientCommonTestCase(httpclient_test.HTTPClientCommonTestCase):
+    # Our own decompressor handles concatenated members.
+    decodes_concatenated_gzip = True
+
     def get_http_client(self):
         client = SimpleAsyncHTTPClient(force_instance=True)
         self.assertTrue(isinstance(client, SimpleAsyncHTTPClient))
@@ -981,3 +985,31 @@ class ChunkedWithContentLengthTest(AsyncHTTPTestCase):
         ):
             with self.assertRaises(HTTPStreamClosedError):
                 self.fetch("/chunkwithcl", raise_error=True)
+
+
+class InvalidGzipTest(AsyncHTTPTestCase):
+    def get_app(self):
+        class InvalidGzipHandler(RequestHandler):
+            def get(self):
+                # Set Content-Encoding manually to avoid automatic gzip
+                # encoding. The body ends with data that is neither part of
+                # the gzip stream nor the start of another member.
+                self.set_header("Content-Type", "text/plain")
+                self.set_header("Content-Encoding", "gzip")
+                self.write(gzip.compress(b"hello") + b"garbage")
+
+        return Application([("/invalid_gzip", InvalidGzipHandler)])
+
+    def get_http_client(self):
+        return SimpleAsyncHTTPClient(force_instance=True)
+
+    def test_invalid_gzip(self):
+        # The decompressor's error is reported as a malformed message
+        # instead of escaping as an uncaught exception.
+        with ExpectLog(
+            gen_log,
+            "Malformed HTTP message from None: invalid gzip data",
+            level=logging.INFO,
+        ):
+            with self.assertRaises(HTTPStreamClosedError):
+                self.fetch("/invalid_gzip", raise_error=True)

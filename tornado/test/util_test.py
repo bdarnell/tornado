@@ -1,7 +1,9 @@
 import datetime
+import gzip
 import re
 import sys
 import textwrap
+import zlib
 from typing import Any, cast
 
 import tornado
@@ -9,6 +11,7 @@ from tornado.escape import utf8
 from tornado.util import (
     ArgReplacer,
     Configurable,
+    GzipDecompressor,
     exec_in,
     import_object,
     raise_exc_info,
@@ -370,6 +373,139 @@ class VersionInfoTest(TestCase):
 
     def test_current_version(self):
         self.assert_version_info_compatible(tornado.version, tornado.version_info)
+
+
+class GzipDecompressorTest(TestCase):
+    # Sizes in which the compressed stream is handed to `decompress`,
+    # standing in for the socket reads that drive it in `HTTP1Connection`.
+    READ_SIZES = [None, 1, 3, 64, 1024]
+    # Values of the ``max_length`` argument. ``_GzipMessageDelegate`` passes
+    # the connection's ``chunk_size`` here, but the class also supports 0
+    # (no limit).
+    MAX_LENGTHS = [0, 1, 5, 100, 65536]
+
+    def _compress(self, *members: bytes, trailer: bytes = b"") -> bytes:
+        return b"".join(gzip.compress(m) for m in members) + trailer
+
+    def _drive(self, data: bytes, read_size, max_length: int, size_limit: int) -> bytes:
+        """Decompresses ``data`` the way `_GzipMessageDelegate` does.
+
+        Follows the documented contract exactly: whatever ``decompress``
+        leaves in ``unconsumed_tail`` is passed back in, and nothing else is.
+        """
+        decompressor = GzipDecompressor()
+        result = bytearray()
+        for i in range(0, len(data), read_size or max(len(data), 1)):
+            chunk = data[i : i + (read_size or len(data))]
+            while chunk:
+                decompressed = decompressor.decompress(chunk, max_length)
+                if max_length:
+                    self.assertLessEqual(len(decompressed), max_length)
+                result.extend(decompressed)
+                # Input that is buffered internally must not also be
+                # reported in unconsumed_tail: a caller that passes the tail
+                # back in as documented would decompress it twice.
+                self.assertLessEqual(len(result), size_limit, "duplicated output")
+                chunk = decompressor.unconsumed_tail
+                # `_GzipMessageDelegate.data_received` treats a non-empty
+                # tail with no output as a failure to make progress.
+                self.assertFalse(chunk and not decompressed, "no progress")
+        result.extend(decompressor.flush())
+        return bytes(result)
+
+    def _assert_roundtrip(self, compressed: bytes, expected: bytes) -> None:
+        for read_size in self.READ_SIZES:
+            for max_length in self.MAX_LENGTHS:
+                with self.subTest(read_size=read_size, max_length=max_length):
+                    self.assertEqual(
+                        self._drive(compressed, read_size, max_length, len(expected)),
+                        expected,
+                    )
+
+    def test_single_member(self):
+        # A single member must keep working at every chunk size; splitting a
+        # member across `decompress` calls is the common case for any
+        # response larger than ``chunk_size``.
+        data = b"".join(b"Hello World %d\n" % i for i in range(1000))
+        self._assert_roundtrip(self._compress(data), data)
+
+    def test_empty_member(self):
+        self._assert_roundtrip(self._compress(b""), b"")
+
+    def test_concatenated_members(self):
+        # Concatenated members are a single valid gzip stream (RFC 1952).
+        members = [b"first member\n", b"second member\n" * 1000, b"third member\n"]
+        self._assert_roundtrip(self._compress(*members), b"".join(members))
+
+    def test_many_concatenated_members(self):
+        members = [b"member %d\n" % i for i in range(100)]
+        self._assert_roundtrip(self._compress(*members), b"".join(members))
+
+    def test_matches_stdlib(self):
+        # Whatever we do at member boundaries, the result must be what
+        # `gzip.decompress` produces for the same bytes.
+        for compressed in [
+            self._compress(b"only one"),
+            self._compress(b"one", b"two", b"three"),
+        ]:
+            with self.subTest(compressed=compressed):
+                self._assert_roundtrip(compressed, gzip.decompress(compressed))
+
+    def test_unconsumed_tail_is_not_buffered_twice(self):
+        # The tail reported to the caller must not also be retained
+        # internally: a caller that follows the contract would otherwise
+        # decompress the same bytes twice.
+        data = b"0123456789" * 10
+        decompressor = GzipDecompressor()
+        first = decompressor.decompress(self._compress(data), 10)
+        self.assertEqual(first, data[:10])
+        tail = decompressor.unconsumed_tail
+        self.assertTrue(tail)
+        rest = decompressor.decompress(tail)
+        self.assertEqual(first + rest + decompressor.flush(), data)
+
+    def test_decompress_with_no_input(self):
+        decompressor = GzipDecompressor()
+        self.assertEqual(decompressor.decompress(b""), b"")
+        self.assertEqual(decompressor.unconsumed_tail, b"")
+        self.assertEqual(decompressor.decompress(self._compress(b"data"), 2), b"da")
+        # An empty read does not discard the tail.
+        self.assertEqual(decompressor.decompress(b""), b"")
+        self.assertEqual(decompressor.decompress(decompressor.unconsumed_tail), b"ta")
+
+    def test_corrupted_checksum(self):
+        compressed = bytearray(self._compress(b"hello"))
+        compressed[-5] ^= 0xFF
+        with self.assertRaises(zlib.error):
+            self._drive(bytes(compressed), None, 0, 1000)
+
+    def test_corrupted_second_member(self):
+        compressed = bytearray(self._compress(b"hello", b"world"))
+        # Break the magic number of the second member.
+        compressed[len(gzip.compress(b"hello"))] ^= 0xFF
+        with self.assertRaises(zlib.error):
+            self._drive(bytes(compressed), None, 0, 1000)
+
+    def test_trailing_garbage(self):
+        with self.assertRaises(zlib.error):
+            self._drive(self._compress(b"hello", trailer=b"garbage"), None, 0, 1000)
+
+    def test_decompress_after_flush(self):
+        decompressor = GzipDecompressor()
+        decompressor.decompress(self._compress(b"hello"))
+        decompressor.flush()
+        with self.assertRaises(RuntimeError):
+            decompressor.decompress(self._compress(b"more"))
+        with self.assertRaises(RuntimeError):
+            decompressor.flush()
+
+    def test_flush_returns_remaining_members(self):
+        # A caller that stops calling decompress early still gets everything
+        # from flush(), as it would for a partially-consumed single member.
+        decompressor = GzipDecompressor()
+        compressed = self._compress(b"one", b"two")
+        self.assertEqual(decompressor.decompress(compressed, 2), b"on")
+        self.assertEqual(decompressor.flush(), b"etwo")
 
 
 class LogCheckCoverageTest(TestCase):

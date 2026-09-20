@@ -22,6 +22,7 @@ import asyncio
 import logging
 import re
 import types
+import zlib
 from collections.abc import Awaitable, Callable
 from typing import Optional, Type, cast
 
@@ -768,9 +769,14 @@ class _GzipMessageDelegate(httputil.HTTPMessageDelegate):
         if self._decompressor:
             compressed_data = chunk
             while compressed_data:
-                decompressed = self._decompressor.decompress(
-                    compressed_data, self._chunk_size
-                )
+                try:
+                    decompressed = self._decompressor.decompress(
+                        compressed_data, self._chunk_size
+                    )
+                except zlib.error as e:
+                    # A corrupt body, or one that continues past the end of
+                    # the last member with something that is not another one.
+                    raise httputil.HTTPInputError("invalid gzip data: %s" % e)
                 if decompressed:
                     self._decompressed_body_size += len(decompressed)
                     if self._decompressed_body_size > self._max_body_size:
@@ -790,7 +796,10 @@ class _GzipMessageDelegate(httputil.HTTPMessageDelegate):
 
     def finish(self) -> None:
         if self._decompressor is not None:
-            tail = self._decompressor.flush()
+            try:
+                tail = self._decompressor.flush()
+            except zlib.error as e:
+                raise httputil.HTTPInputError("invalid gzip data: %s" % e)
             if tail:
                 # The tail should always be empty: decompress returned
                 # all that it can in data_received and the only

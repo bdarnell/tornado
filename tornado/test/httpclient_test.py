@@ -272,6 +272,36 @@ class BrotliBombHandler(RequestHandler):
         self.write(BROTLI_BOMB)
 
 
+# Size of each member of the response served by `ConcatenatedGzipHandler`.
+# Larger than the default ``chunk_size``, so that the client's decompressor
+# is driven with a non-zero ``max_length``.
+CONCATENATED_GZIP_MEMBER_SIZE = 100 * 1024
+
+
+@functools.lru_cache(maxsize=None)
+def concatenated_gzip_members() -> tuple:
+    """Returns the decompressed members of the response below."""
+    return (
+        b"a" * CONCATENATED_GZIP_MEMBER_SIZE,
+        b"b" * CONCATENATED_GZIP_MEMBER_SIZE,
+    )
+
+
+class ConcatenatedGzipHandler(RequestHandler):
+    """Sends a gzip response made of two members.
+
+    :rfc:`1952` section 2.2 defines a series of members as one gzip stream.
+    Concatenated gzip files are one, as is the output of a block-parallel
+    compressor such as ``bgzip``.
+    """
+
+    def get(self):
+        # Set Content-Encoding manually to avoid automatic gzip encoding.
+        self.set_header("Content-Type", "text/plain")
+        self.set_header("Content-Encoding", "gzip")
+        self.write(b"".join(gzip.compress(m) for m in concatenated_gzip_members()))
+
+
 class LargeBodyHandler(RequestHandler):
     def get(self):
         # An incompressible content type, so that the server's gzip
@@ -292,6 +322,13 @@ class HTTPClientCommonTestCase(AsyncHTTPTestCase):
     # decodes an encoding it did not request (see BrotliBombHandler).
     decompresses_brotli = False
 
+    # Whether the client decodes a gzip response made of more than one
+    # member (see ConcatenatedGzipHandler). `.GzipDecompressor` does and
+    # libcurl does not, so it is each implementation's subclass that sets
+    # this. Here the client under test is whichever one --httpclient names,
+    # so the answer is not known and the test below is skipped.
+    decodes_concatenated_gzip: typing.Optional[bool] = None
+
     def get_app(self):
         return Application(
             [
@@ -310,6 +347,7 @@ class HTTPClientCommonTestCase(AsyncHTTPTestCase):
                 url("/patch", PatchHandler),
                 url("/set_header", SetHeaderHandler),
                 url("/invalid_gzip", InvalidGzipHandler),
+                url("/concatenated_gzip", ConcatenatedGzipHandler),
                 url("/header-encoding", HeaderEncodingHandler),
                 url("/echo_headers", EchoHeadersHandler),
                 url("/gzip_bomb", GzipBombHandler),
@@ -683,6 +721,16 @@ Transfer-Encoding: chunked
                 self.assertEqual(response.body[:14], b"Hello World 0\n")
             except HTTPError:
                 pass  # acceptable
+
+    def test_concatenated_gzip(self):
+        if self.decodes_concatenated_gzip is None:
+            self.skipTest("client's handling of concatenated gzip is not declared here")
+        if not self.decodes_concatenated_gzip:
+            with self.assertRaises(HTTPError):
+                self.fetch("/concatenated_gzip")
+            return
+        response = self.fetch("/concatenated_gzip")
+        self.assertEqual(response.body, b"".join(concatenated_gzip_members()))
 
     def test_header_callback(self):
         first_line = []
