@@ -290,8 +290,9 @@ def concatenated_gzip_members() -> tuple:
 class ConcatenatedGzipHandler(RequestHandler):
     """Sends a gzip response made of two members.
 
-    :rfc:`1952` section 2.2 defines a series of members as one gzip stream;
-    ``pigz`` produces them when it compresses in parallel.
+    :rfc:`1952` section 2.2 defines a series of members as one gzip stream.
+    Concatenated gzip files are one, as is the output of a block-parallel
+    compressor such as ``bgzip``.
     """
 
     def get(self):

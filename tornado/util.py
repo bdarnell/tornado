@@ -66,11 +66,12 @@ class GzipDecompressor:
 
     .. versionchanged:: 6.6
 
-       Streams containing multiple concatenated gzip members (as produced by
-       ``pigz``, and defined by :rfc:`1952` section 2.2) are now decompressed
-       in full. Previously everything after the first member was silently
-       discarded, or raised an error depending on how the stream was
-       chunked.
+       Streams containing multiple concatenated gzip members (as produced
+       by ``cat a.gz b.gz``, or by block-parallel compressors such as
+       ``bgzip``, and defined by :rfc:`1952` section 2.2) are now
+       decompressed in full. Previously everything after the first member
+       was silently discarded, or raised an error depending on how the
+       stream was chunked.
     """
 
     def __init__(self) -> None:
