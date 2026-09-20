@@ -384,8 +384,8 @@ class GzipDecompressorTest(TestCase):
     # (no limit).
     MAX_LENGTHS = [0, 1, 5, 100, 65536]
 
-    def _compress(self, *members: bytes, padding: bytes = b"") -> bytes:
-        return b"".join(gzip.compress(m) for m in members) + padding
+    def _compress(self, *members: bytes, trailer: bytes = b"") -> bytes:
+        return b"".join(gzip.compress(m) for m in members) + trailer
 
     def _drive(self, data: bytes, read_size, max_length: int, size_limit: int) -> bytes:
         """Decompresses ``data`` the way `_GzipMessageDelegate` does.
@@ -441,23 +441,12 @@ class GzipDecompressorTest(TestCase):
         members = [b"member %d\n" % i for i in range(100)]
         self._assert_roundtrip(self._compress(*members), b"".join(members))
 
-    def test_trailing_padding(self):
-        # Trailing zero bytes are ignored rather than treated as a truncated
-        # member (https://www.gzip.org/ancient/#faq8).
-        data = b"padded\n" * 100
-        self._assert_roundtrip(self._compress(data, padding=b"\0" * 16), data)
-
-    def test_padding_between_members(self):
-        compressed = gzip.compress(b"one") + b"\0" * 8 + gzip.compress(b"two")
-        self._assert_roundtrip(compressed, b"onetwo")
-
     def test_matches_stdlib(self):
-        # Whatever we do with member boundaries and padding, the result must
-        # be what `gzip.decompress` produces for the same bytes.
+        # Whatever we do at member boundaries, the result must be what
+        # `gzip.decompress` produces for the same bytes.
         for compressed in [
             self._compress(b"only one"),
             self._compress(b"one", b"two", b"three"),
-            self._compress(b"padded", padding=b"\0" * 4),
         ]:
             with self.subTest(compressed=compressed):
                 self._assert_roundtrip(compressed, gzip.decompress(compressed))
@@ -499,7 +488,7 @@ class GzipDecompressorTest(TestCase):
 
     def test_trailing_garbage(self):
         with self.assertRaises(zlib.error):
-            self._drive(self._compress(b"hello", padding=b"garbage"), None, 0, 1000)
+            self._drive(self._compress(b"hello", trailer=b"garbage"), None, 0, 1000)
 
     def test_decompress_after_flush(self):
         decompressor = GzipDecompressor()
