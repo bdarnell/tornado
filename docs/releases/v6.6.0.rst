@@ -1,0 +1,98 @@
+What's new in Tornado 6.6.0
+===========================
+
+In progress
+-----------
+
+General Changes
+~~~~~~~~~~~~~~~
+
+- The minimum supported Python version is 3.11.
+- Python 3.15 is now supported.
+- Prebuilt wheels are now available for the free-threading build of Python 3.14, and for
+  more platforms: Windows on ARM, and Linux on ``riscv64``, ``ppc64le``, and ``s390x``.
+  Separate macOS ``x86_64`` wheels are no longer built; the ``universal2`` wheels cover
+  that platform.
+- Importing Tornado no longer creates the default `ssl.SSLContext` objects. Creating them
+  loads the platform's certificate store, which on some platforms starts background threads,
+  which in turn made a subsequent `os.fork` (as in `.fork_processes`) unsafe. They are now
+  created on first use instead.
+
+Deprecation Notices
+~~~~~~~~~~~~~~~~~~~
+
+- The ``method``, ``uri``, and ``version`` arguments to the `.HTTPServerRequest` constructor
+  are deprecated and will be removed in Tornado 6.7. Use the ``start_line`` argument instead,
+  which will become required at that time, along with the previously-deprecated ``host``
+  argument being removed and all remaining arguments becoming keyword-only.
+- `.OpenIdMixin`, which was deprecated in Tornado 6.5.8, is now scheduled for removal in
+  Tornado 6.7 instead of 7.0.
+
+Type Annotation Changes
+~~~~~~~~~~~~~~~~~~~~~~~
+
+- Type annotations throughout the package have been modernized to use the built-in generic
+  types (``list[str]``) and union syntax (``str | None``) instead of their `typing`
+  equivalents. Remaining type comments have been converted to annotations.
+- The ``method`` and ``uri`` attributes of `.HTTPServerRequest` are now typed as `str` instead
+  of ``Optional[str]``.
+- A number of attributes that were declared with a class-level default of ``None`` (including
+  ``RequestHandler.path_args``, ``path_kwargs``, and ``HTTPServerRequest.path``) are now
+  declared with annotations only. Reading one of these attributes before it has been assigned
+  now raises `AttributeError` instead of returning ``None``.
+- The ``streaming_callback`` argument to `.HTTPRequest` is now typed to allow a coroutine.
+
+`tornado.auth`
+~~~~~~~~~~~~~~
+
+- `.OpenIdMixin` will now be removed in Tornado 6.7 instead of 7.0.
+
+`tornado.httpclient`
+~~~~~~~~~~~~~~~~~~~~
+
+- The ``streaming_callback`` argument may now be a coroutine (or any function returning an
+  awaitable) when used with ``simple_httpclient``. Awaiting the callback applies backpressure,
+  so the response is no longer read faster than the callback consumes it. ``curl_httpclient``
+  does not support this and now raises `TypeError` if given a coroutine function.
+
+`tornado.httputil`
+~~~~~~~~~~~~~~~~~~
+
+- The ``method``, ``uri``, and ``version`` arguments to the `.HTTPServerRequest` constructor
+  are deprecated in favor of ``start_line``, which will be required in Tornado 6.7. Passing
+  ``method`` or ``uri`` together with ``start_line`` (in which case the former were silently
+  ignored) is deprecated as well.
+
+`tornado.locks`
+~~~~~~~~~~~~~~~
+
+- A ``timeout`` argument of zero now returns or raises immediately instead of being treated
+  the same as ``None`` (wait forever). This affects `.Condition.wait`, `.Event.wait`,
+  `.Semaphore.acquire`, and `.Lock.acquire`.
+
+`tornado.netutil`
+~~~~~~~~~~~~~~~~~
+
+- The default `ssl.SSLContext` objects are now created on first use instead of at import time.
+  The private module attributes ``_client_ssl_defaults`` and ``_server_ssl_defaults`` are now
+  functions rather than context objects.
+
+`tornado.platform.asyncio`
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- The waker socket pair used by `.SelectorThread` is now closed when the interpreter exits,
+  instead of leaking a pair of sockets for every selector still registered at that point.
+
+`tornado.queues`
+~~~~~~~~~~~~~~~~
+
+- A ``timeout`` argument of zero now returns or raises immediately instead of being treated
+  the same as ``None`` (wait forever). This affects `.Queue.get`, `.Queue.put`, and
+  `.Queue.join`.
+
+`tornado.template`
+~~~~~~~~~~~~~~~~~~
+
+- The security considerations of this module are now documented, including the fact that
+  templates may contain arbitrary Python code and that autoescaping applies only to ``{{ }}``
+  expressions. Path resolution in `.Loader` is now documented as well.
