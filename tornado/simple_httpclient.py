@@ -15,7 +15,11 @@ from typing import Any, Optional, Type
 
 from tornado import gen, httputil, version
 from tornado.escape import _unicode
-from tornado.http1connection import HTTP1Connection, HTTP1ConnectionParameters
+from tornado.http1connection import (
+    HTTP1Connection,
+    HTTP1ConnectionParameters,
+    _QuietException,
+)
 from tornado.httpclient import (
     AsyncHTTPClient,
     HTTPError,
@@ -568,8 +572,10 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
             # If our callback has already been called, we are probably
             # catching an exception that is not caused by us but rather
             # some child of our callback. Rather than drop it on the floor,
-            # pass it along, unless it's just the stream being closed.
-            return isinstance(value, StreamClosedError)
+            # pass it along, unless it's just the stream being closed or
+            # an exception that HTTP1Connection has already logged (in which
+            # case our callback was called by on_connection_close).
+            return isinstance(value, (StreamClosedError, _QuietException))
 
     def on_connection_close(self) -> None:
         if self.final_callback is not None:
