@@ -1,7 +1,9 @@
+import asyncio
 import socket
 
-from tornado.http1connection import HTTP1Connection
-from tornado.httputil import HTTPMessageDelegate
+from tornado.concurrent import Future
+from tornado.http1connection import HTTP1Connection, HTTP1ServerConnection
+from tornado.httputil import HTTPMessageDelegate, HTTPServerConnectionDelegate
 from tornado.iostream import IOStream
 from tornado.locks import Event
 from tornado.netutil import add_accept_handler
@@ -9,8 +11,8 @@ from tornado.test.util import AsyncTestCase
 from tornado.testing import bind_unused_port, gen_test
 
 
-class HTTP1ConnectionTest(AsyncTestCase):
-    code: int | None = None
+class StreamPairTestCase(AsyncTestCase):
+    """Base class for tests that use a connected pair of IOStreams."""
 
     def setUp(self):
         super().setUp()
@@ -32,6 +34,10 @@ class HTTP1ConnectionTest(AsyncTestCase):
         yield [self.client_stream.connect(("127.0.0.1", port)), event.wait()]
         self.io_loop.remove_handler(listener)
         listener.close()
+
+
+class HTTP1ConnectionTest(StreamPairTestCase):
+    code: int | None = None
 
     @gen_test
     def test_1xx_does_not_read_a_second_body(self):
@@ -92,3 +98,40 @@ class HTTP1ConnectionTest(AsyncTestCase):
         yield event.wait()
         self.assertEqual(self.code, 200)
         self.assertEqual(b"".join(body), b"hello")
+
+
+class HTTP1ServerConnectionTest(StreamPairTestCase):
+    async def start_serving(self):
+        class Delegate(HTTPServerConnectionDelegate):
+            def start_request(self, server_conn, request_conn):
+                return HTTPMessageDelegate()
+
+        conn = HTTP1ServerConnection(self.server_stream)
+        conn.start_serving(Delegate())
+        serving_future = conn._serving_future
+        assert serving_future is not None
+        # Let the serving loop start reading.
+        await asyncio.sleep(0)
+        return conn, serving_future
+
+    @gen_test
+    async def test_close_serving_loop_cancelled(self):
+        # If the serving loop was cancelled, close() does not raise.
+        conn, serving_future = await self.start_serving()
+        cancelled: Future[None] = Future()
+        cancelled.cancel()
+        conn._serving_future = cancelled
+        await conn.close()
+        await serving_future
+
+    @gen_test
+    async def test_close_cancelled(self):
+        # Cancelling close() itself still raises CancelledError.
+        conn, serving_future = await self.start_serving()
+        conn._serving_future = Future()
+        close_task = asyncio.ensure_future(conn.close())
+        await asyncio.sleep(0)
+        close_task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await close_task
+        await serving_future

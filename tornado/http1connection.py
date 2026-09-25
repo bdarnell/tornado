@@ -847,6 +847,12 @@ class HTTP1ServerConnection:
         assert self._serving_future is not None
         try:
             await self._serving_future
+        except asyncio.CancelledError:
+            # The serving loop being cancelled is not an error here, but if
+            # our own task was cancelled, let that propagate.
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise
         except Exception:
             pass
 
