@@ -77,7 +77,11 @@ class TestIOLoop(AsyncTestCase):
         self.io_loop.add_callback(thread.start)
         self.wait()
         delta = time.time() - self.stop_time
-        self.assertLess(delta, 0.2)
+        # If the cross-thread wakeup were broken, the loop would sleep until
+        # the next scheduled timer, which is the wait() timeout (5s by
+        # default), so a 1s threshold still detects the failure while leaving
+        # room for slow CI machines (such as emulated x86 on arm macs).
+        self.assertLess(delta, 1.0)
         thread.join()
 
     def test_add_timeout_timedelta(self):
