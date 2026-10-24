@@ -21,6 +21,7 @@ from tornado.httpclient import (
     HTTPError,
     HTTPRequest,
     HTTPResponse,
+    _decompress_encodings,
     _RequestProxy,
     main,
 )
@@ -282,6 +283,10 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
 
     async def run(self) -> None:
         try:
+            # Only gzip is implemented (by HTTP1Connection).
+            self._decompress_encodings = _decompress_encodings(
+                self.request.decompress_response, {"gzip"}, {"gzip"}
+            )
             self.parsed = urllib.parse.urlsplit(_unicode(self.request.url))
             if self.parsed.scheme not in ("http", "https"):
                 raise ValueError("Unsupported url scheme: %s" % self.request.url)
@@ -432,8 +437,10 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
                 self.request.headers["Content-Type"] = (
                     "application/x-www-form-urlencoded"
                 )
-            if self.request.decompress_response:
-                self.request.headers["Accept-Encoding"] = "gzip"
+            if self._decompress_encodings:
+                self.request.headers["Accept-Encoding"] = ", ".join(
+                    sorted(self._decompress_encodings)
+                )
             req_path = (self.parsed.path or "/") + (
                 ("?" + self.parsed.query) if self.parsed.query else ""
             )
@@ -505,7 +512,7 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
                 no_keep_alive=True,
                 max_header_size=self.max_header_size,
                 max_body_size=self.max_body_size,
-                decompress=bool(self.request.decompress_response),
+                decompress="gzip" in self._decompress_encodings,
             ),
             self._sockaddr,
         )
