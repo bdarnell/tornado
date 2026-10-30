@@ -105,8 +105,9 @@ class _ABNF:
     reason_phrase = re.compile(rf"(?:[\t ]|{VCHAR.pattern}|{obs_text.pattern})+")
     # request_target delegates to the URI RFC 3986, which is complex and may be
     # too restrictive (for example, the WHATWG version of the URL spec allows non-ASCII
-    # characters). Instead, we allow everything but control chars and whitespace.
-    request_target = re.compile(rf"{field_vchar.pattern}+")
+    # characters). Instead, we allow everything but control chars, whitespace, and
+    # "#" (a fragment is never part of a request target).
+    request_target = re.compile(rf"(?:(?!#){field_vchar.pattern})+")
     request_line = re.compile(
         rf"({method.pattern}) ({request_target.pattern}) ({HTTP_version.pattern})"
     )

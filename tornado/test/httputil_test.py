@@ -702,6 +702,13 @@ class ParseRequestStartLineTest(TestCase):
         self.assertEqual(parsed_start_line.path, self.PATH)
         self.assertEqual(parsed_start_line.version, self.VERSION)
 
+    def test_fragment_rejected(self):
+        # A fragment is never sent as part of a request target.
+        for path in ["/foo#bar", "/foo?a=b#c", "#"]:
+            with self.subTest(path=path):
+                with self.assertRaises(HTTPInputError):
+                    parse_request_start_line(f"GET {path} HTTP/1.1")
+
 
 class ParseCookieTest(TestCase):
     # These tests copied from Django:
