@@ -391,7 +391,8 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
                     self.request.headers["Host"] = self.parsed.netloc
             username, password = None, None
             if self.parsed.username is not None:
-                username, password = self.parsed.username, self.parsed.password
+                username = self.parsed.username
+                password = self.parsed.password or ""
             elif self.request.auth_username is not None:
                 username = self.request.auth_username
                 password = self.request.auth_password or ""
