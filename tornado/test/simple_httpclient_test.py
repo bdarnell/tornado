@@ -289,6 +289,20 @@ class SimpleHTTPClientTestMixin(AsyncTestCase):
         self.assertEqual(200, response.code)
         self.assertEqual(response.body.decode(), f"Tornado/{version}")
 
+    def test_invalid_url_characters(self):
+        # Spaces and control characters would produce a malformed request
+        # line (and urlsplit would silently remove some of them).
+        for path in [
+            "/hello world",
+            "/hello\x00",
+            "/hello\x0b",
+            "/hello\x7f",
+            "/hel\tlo",
+        ]:
+            with self.subTest(path=path):
+                with self.assertRaises(ValueError):
+                    self.fetch(path, raise_error=True)
+
     def test_see_other_redirect(self):
         for code in (302, 303):
             response = self.fetch("/see_other_post", method="POST", body="%d" % code)

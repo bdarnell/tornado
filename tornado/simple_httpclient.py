@@ -35,6 +35,11 @@ from tornado.netutil import (
 )
 from tornado.tcpclient import TCPClient
 
+# Control characters and spaces are not allowed anywhere in a URL. urlsplit
+# silently removes some of them (tabs and newlines), and the rest would be sent
+# as-is, producing a malformed request line.
+_FORBIDDEN_URL_CHARS_RE = re.compile(r"[\x00-\x20\x7f]")
+
 
 class HTTPTimeoutError(HTTPError):
     """Error raised by SimpleAsyncHTTPClient on timeout.
@@ -282,7 +287,10 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
 
     async def run(self) -> None:
         try:
-            self.parsed = urllib.parse.urlsplit(_unicode(self.request.url))
+            url = _unicode(self.request.url)
+            if _FORBIDDEN_URL_CHARS_RE.search(url):
+                raise ValueError("Invalid character in url: %r" % url)
+            self.parsed = urllib.parse.urlsplit(url)
             if self.parsed.scheme not in ("http", "https"):
                 raise ValueError("Unsupported url scheme: %s" % self.request.url)
             # urlsplit results have hostname and port results, but they
