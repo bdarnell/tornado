@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a new feature or a change to existing behavior.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Please describe the problem you're trying to solve
+        rather than only the solution; there may be an existing way to do it, or a
+        different design that fits Tornado better. There is no need to send a pull
+        request with it.
+  - type: textarea
+    id: usecase
+    attributes:
+      label: What are you trying to do?
+      description: What are you building, and what part of it is hard or impossible with Tornado today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Tornado to do?
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: How are you handling this now, if at all?
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Tornado and Python versions you're using.

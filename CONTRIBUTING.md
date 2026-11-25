@@ -1,5 +1,35 @@
 # Contributing to Tornado
 
+## Start with an issue
+
+Tornado has one active maintainer, so review time is the project's scarcest resource. A
+pull request often takes longer to review than the change would take to write, which means
+the most valuable contribution is usually not code but a clear description of a problem.
+
+**Please open an issue before writing a pull request** for anything beyond documentation
+and typo fixes. The best issues come from real use: tell us what you were building, what
+you expected, what happened instead, and include a minimal example that reproduces it.
+Reports of how Tornado behaves in production, with real clients, proxies and workloads, are
+especially valuable because they are hard to get any other way. An issue that explains the
+problem well is often all that is needed to get it fixed.
+
+Pull requests that are welcome without a prior discussion:
+
+* Fixes to documentation, docstrings, comments and typos.
+* Changes that the maintainer has invited on an issue. Please link the issue in the PR.
+
+Other pull requests may be closed without detailed review, even if the change is good. This
+is not a judgment of your work; it is the only way to keep review manageable. If your PR is
+closed this way, the underlying problem will be tracked in an issue.
+
+To report a security vulnerability, do not open an issue or pull request; follow the
+instructions in [SECURITY.md](SECURITY.md) instead. Questions about how to use Tornado are
+best asked on the [mailing list](https://groups.google.com/forum/#!forum/python-tornado) or
+[Stack Overflow](https://stackoverflow.com/questions/tagged/tornado).
+
+The rest of this document describes how to work on the code, for invited pull requests and
+for anyone who wants to experiment with Tornado locally.
+
 ## The basics
 
 * We use `black` as code formatter and recommend configuring your editor to run this automatically
@@ -87,10 +117,16 @@ We use Sphinx with the `autodoc` extension to build our docs. To build the docs 
 
 ## AI policy
 
-Tornado has a neutral stance towards AI-generated code. All pull requests, whether human
-or machine-generated, are subject to strict code review standards. However, PRs that appear
-to be AI-generated *and* contain clear flaws (such as failing CI) may be closed without
-detailed review. 
+Tornado has a neutral stance towards AI-generated code, and the issue-first policy above
+applies the same way whether or not you use AI tools. All pull requests, whether human or
+machine-generated, are subject to strict code review standards. PRs that appear to be
+AI-generated *and* contain clear flaws (such as failing CI) may be closed without detailed
+review.
+
+If an AI tool or a static analyzer found the problem you are reporting, that is fine, but
+please say so in the issue, and reproduce the problem against a real Tornado server or
+client before filing. Reports that describe an actual failure are much easier to act on
+than ones that describe what the code appears to do.
 
 ## curl_httpclient notes
 
@@ -106,6 +142,7 @@ detailed review.
 
 ## PR Checklist
 
+- [ ] The PR fixes documentation or typos, or links to an issue where it was invited
 - [ ] Run `tox -e lint,docs,py3` locally and make sure it passes
 - [ ] If you modify `curl_httpclient.py`, also run `tox -e py3-full`
 - [ ] Review your changes for any backwards incompatibilities that may affect

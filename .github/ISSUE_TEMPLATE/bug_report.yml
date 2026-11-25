@@ -1,0 +1,57 @@
+name: Bug report
+description: Something in Tornado doesn't work the way it should.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a problem. A clear report is often all that's
+        needed to get a bug fixed, so there is no need to send a pull request with it.
+        Please don't report security vulnerabilities here; see SECURITY.md instead.
+  - type: textarea
+    id: context
+    attributes:
+      label: What were you doing?
+      description: What were you building or running when you hit this? A sentence or two of context helps us judge impact and find the right fix.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include the full traceback or log output if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest self-contained program (or curl command, request, etc.) that shows the problem.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Tornado version, Python version, and operating system.
+      placeholder: Tornado 6.5.2, Python 3.13.1, Ubuntu 24.04
+    validations:
+      required: true
+  - type: dropdown
+    id: found
+    attributes:
+      label: How did you find this?
+      description: Any of these is fine; it helps us triage.
+      options:
+        - In a real application or deployment
+        - In my own tests
+        - By reading the code
+        - With an automated tool (AI assistant, static analyzer, fuzzer)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Workarounds you've found, related issues, or ideas about the cause.

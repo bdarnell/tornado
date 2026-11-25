@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/tornadoweb/tornado/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue. See SECURITY.md.
+  - name: Ask a question
+    url: https://groups.google.com/forum/#!forum/python-tornado
+    about: Questions about how to use Tornado are best asked on the mailing list or Stack Overflow.
